@@ -373,7 +373,7 @@ The Summary LLM is asked to return JSON with three fields:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `rational` | string | Reasoning about why the found content relates to the goal |
+| `rational` | string | Reasoning about why the found content relates to the goal (note: the field name in the codebase is `rational`, not `rationale`) |
 | `evidence` | string | Actual extracted text from the webpage (can be multiple paragraphs) |
 | `summary` | string | A condensed summary with logical flow |
 
