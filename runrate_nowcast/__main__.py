@@ -12,6 +12,8 @@ python -m runrate_nowcast fit-indicators [--write]       # MAP beta / drift / no
 python -m runrate_nowcast layers [--refit]               # backtest one layer at a time
 python -m runrate_nowcast audit                          # sensitivity of conclusions to hand-set choices
 python -m runrate_nowcast ml                             # ML on interpolated labels: backtest + current nowcast
+python -m runrate_nowcast bayes [--lags]                 # posterior (MAP + Laplace) nowcast
+python -m runrate_nowcast bayes-backtest                 # strict backtest with posterior refit per vintage
 """
 from __future__ import annotations
 
@@ -43,6 +45,9 @@ def main(argv=None):
     p = sub.add_parser("layers"); p.add_argument("--refit", action="store_true")
     sub.add_parser("audit")
     p = sub.add_parser("ml"); p.add_argument("--asof", default=None)
+    p = sub.add_parser("bayes"); p.add_argument("--asof", default=None)
+    p.add_argument("--lags", action="store_true", help="also mix over indicator lag and definition lag by evidence")
+    sub.add_parser("bayes-backtest")
     a = ap.parse_args(argv)
 
     warnings.simplefilter("ignore")
@@ -132,6 +137,29 @@ def main(argv=None):
             f.write(md)
         print(md)
         print(f"-> {out}")
+
+    elif a.cmd == "bayes":
+        from . import bayes
+        kw = {"lags": (-7, 0, 7), "def_lags": (7, 14)} if a.lags else {}
+        summ, weights, post = bayes.posterior_nowcast(df, params, asof, **kw)
+        md = [f"# Posterior nowcast (as of {asof:%Y-%m-%d})\n",
+              "MAP + Laplace posterior over all estimated parameters; predictions mix over posterior draws.\n",
+              "| Quantity | Median / mean | 80% interval |", "|---|---|---|"]
+        for k, v in summ.items():
+            c = v.get("median", v.get("mean"))
+            md.append(f"| {k} | {c:.1f} | [{v['q10']:.1f}, {v['q90']:.1f}] |")
+        md += ["", "## Structure weights (Laplace evidence)", "", weights.round(3).to_markdown(index=False), "",
+               "## Parameter posterior (best structure)", "", post.round(4).to_markdown(index=False), ""]
+        out = os.path.join(config.OUTPUT_DIR, f"bayes_{asof:%Y-%m-%d}.md")
+        with open(out, "w") as f:
+            f.write("\n".join(md))
+        print("\n".join(md)); print(f"-> {out}")
+
+    elif a.cmd == "bayes-backtest":
+        from . import bayes
+        bt = bayes.bayes_backtest(df, params)
+        bt.to_csv(os.path.join(config.OUTPUT_DIR, f"bayes_backtest_{asof:%Y-%m-%d}.csv"), index=False)
+        print(bayes.summarize(bt).round(3).to_string())
 
     elif a.cmd == "audit":
         from . import audit

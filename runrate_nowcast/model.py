@@ -17,6 +17,13 @@ State (one step per calendar day):
            taken as fixed: levels come from audited and official figures, and the
            indicators mostly carry information about changes. A known break in how a
            source counts (catalog `breaks`) adds a one-off variance bump to a_i.
+  Indicator families (optional)
+    c_f    shared drift of an indicator family (e.g. npm and PyPI SDK downloads) relative
+           to revenue. Without it, two indicators drifting together are counted as two
+           independent confirmations.
+  Growth volatility (optional)
+    the growth-shock variance is multiplied by exp(v_q) in calendar quarter q
+    (piecewise stochastic volatility; v_q are parameters, see bayes.py).
   Revenue accumulators
     A_k    revenue accumulated so far in period k ($B). Quarterly GAAP revenue is an
            exact integral of the daily path.
@@ -63,10 +70,11 @@ class Layout:
     segments: list
     indicators: list
     periods: list
+    factors: list = field(default_factory=list)
 
     @property
     def n(self):
-        return N_BASE + len(self.segments) + len(self.indicators) + len(self.periods)
+        return N_BASE + len(self.segments) + len(self.indicators) + len(self.factors) + len(self.periods)
 
     def seg(self, name):
         return N_BASE + self.segments.index(name)
@@ -74,9 +82,12 @@ class Layout:
     def ind(self, name):
         return N_BASE + len(self.segments) + self.indicators.index(name)
 
+    def fac(self, name):
+        return N_BASE + len(self.segments) + len(self.indicators) + self.factors.index(name)
+
     @property
     def acc0(self):
-        return N_BASE + len(self.segments) + len(self.indicators)
+        return N_BASE + len(self.segments) + len(self.indicators) + len(self.factors)
 
     @property
     def n_core(self):
@@ -259,7 +270,12 @@ class Model:
         if any(self.p["segments"][s]["partition"] for s in segs):
             segs |= {s for s, v in self.p["segments"].items() if v["partition"]}
         order = [s for s in self.p["segments"] if s in segs]
-        return Layout(order, inds, self._periods(obs_df, queries))
+        facs = []
+        for name in inds:
+            f = self.p["indicators"][name].get("factor") or ""
+            if f and f not in facs:
+                facs.append(f)
+        return Layout(order, inds, self._periods(obs_df, queries), facs)
 
     def _periods(self, obs_df, queries):
         seen, out = set(), []
@@ -307,6 +323,9 @@ class Model:
             spec = self.p["indicators"][row.indicator]
             beta = float(spec.get("beta", 1.0))
             H[lay.ind(row.indicator)] = 1.0
+            f = spec.get("factor") or ""
+            if f:
+                H[lay.fac(f)] = 1.0          # shared drift of the indicator family vs revenue
             H[L] = beta
             s = spec.get("segment", "total")
             if s != "total":
@@ -353,6 +372,9 @@ class Model:
         for o in obs:
             by_t.setdefault(o.t, []).append(o)
         ctx = self._context(lay, obs_df)
+        # Growth-shock variance multiplier per day (piecewise stochastic volatility by quarter).
+        q = dates.to_period("Q").astype(str)
+        ctx["gmult"] = np.array([ctx["vol"].get(k, 1.0) for k in q]) if ctx["vol"] else None
 
         res = self._pass(ctx, T, dates, lay, by_t, None, smooth)
         if smooth:
@@ -390,6 +412,12 @@ class Model:
             Q[j, j] = float(spec.get("drift", 0.003)) ** 2
             for d in spec.get("breaks", []) or []:
                 breaks.setdefault((pd.Timestamp(d) - self.start).days, []).append(j)
+        for f in lay.factors:
+            j, spec = lay.fac(f), p.get("factors", {}).get(f, {})
+            # The level is carried by the idiosyncratic intercepts; the factor starts at 0
+            # and carries only the common drift.
+            P0[j, j] = float(spec.get("prior_sd", 0.01)) ** 2
+            Q[j, j] = float(spec.get("drift", 0.01)) ** 2
         starts = np.array([(pp.start - self.start).days for pp in lay.periods], dtype=int)
         ends = np.array([(pp.end - self.start).days for pp in lay.periods], dtype=int)
         c = np.zeros(n)
@@ -399,7 +427,8 @@ class Model:
         a_g[G] = kappa * float(p.get("growth_longrun", 0.0)) / config.DAYS_PER_MONTH
         part = [lay.seg(s) for s in lay.segments if p["segments"][s]["partition"]]
         return {"Q": Q, "m0": m0, "P0": P0, "starts": starts, "ends": ends, "c": c, "n": n,
-                "kappa": kappa, "a_g": a_g, "acc0": lay.acc0, "partition": part, "breaks": breaks}
+                "kappa": kappa, "a_g": a_g, "acc0": lay.acc0, "partition": part, "breaks": breaks,
+                "vol": {k: math.exp(float(v)) for k, v in (p.get("vol_scales") or {}).items()}}
 
     def _transition(self, ctx, t):
         """Linear part M and revenue loading d for the step into day t."""
@@ -456,6 +485,8 @@ class Model:
             omega = E * E * (math.expm1(v) - v)
             m = F @ m + a
             P = F @ P @ F.T + np.outer(d, d) * omega + Q
+            if ctx["gmult"] is not None and ctx["gmult"][t] != 1.0:
+                P[G, G] += Q[G, G] * (ctx["gmult"][t] - 1.0)
             for j in ctx["breaks"].get(t, ()):
                 P[j, j] += BREAK_SD ** 2          # source changed how it counts
             P = 0.5 * (P + P.T)

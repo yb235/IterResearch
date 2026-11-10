@@ -266,3 +266,69 @@ def test_ml_uses_only_data_public_before_the_vintage():
     feats = ml.weekly_features(raw, vintage)
     # week centre + 3 days = Sunday week end; data for that week is public the next day
     assert (feats.index + pd.Timedelta(days=4) <= vintage).all()
+
+
+# ----------------------------------------------------------------- bayesian upgrade
+def _two_indicators(days, l_true, seed=11, common_after=None, slope=0.004):
+    """Two indicators tracking revenue; after `common_after` both drift up together (not revenue)."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    for name, a in (("ind_a", 2.0), ("ind_b", 5.0)):
+        for d in pd.date_range("2025-01-05", days[-1], freq="7D"):
+            t = (d - days[0]).days
+            common = slope * max((d - pd.Timestamp(common_after)).days, 0) if common_after else 0.0
+            v = math.exp(a + l_true[t] + common + rng.normal(0, 0.02))
+            rows.append({"obs_id": f"{name}@{d:%Y-%m-%d}", "metric": "indicator", "kind": "point", "value": v,
+                         "ref_date": d, "published": d + pd.Timedelta(days=1), "tier": "altdata", "indicator": name})
+    return _obs_df(rows)
+
+
+def test_shared_factor_reduces_double_counting():
+    """Two download indicators drifting together are one piece of evidence, not two.
+
+    Setup: anchors stop mid-2026; two developer-activity indicators then drift up together
+    (not revenue); a third, spend-type indicator keeps tracking revenue. With independent
+    intercepts the two drifting indicators outvote the spend indicator. With a shared
+    factor they count roughly once, so the revenue error is smaller (though not zero:
+    real-time evidence close to revenue is what actually fixes this).
+    """
+    days, l_true, _, df = _simulate()
+    base = df[pd.to_datetime(df.published) <= "2026-07-01"]
+    ind = _two_indicators(days, l_true, common_after="2026-07-15")
+    spend = _indicator_df(days, l_true, name="ind_spend", seed=7)
+    sel = data.select(pd.concat([base, ind, spend], ignore_index=True))
+    t = (pd.Timestamp("2026-10-15") - days[0]).days
+    c = {"sigma_l": 0.004, "sigma_g": 0.016}
+    # same total intercept variance per download indicator: 0.008^2 = 0.0035^2 + dc^2
+    dc = (0.008 ** 2 - 0.0035 ** 2) ** 0.5
+    indep = {k: _spec(drift=0.008) for k in ("ind_a", "ind_b")}
+    shared = {k: _spec(drift=0.0035, factor="dev") for k in ("ind_a", "ind_b")}
+    indep["ind_spend"] = shared["ind_spend"] = _spec(drift=0.008, obs_sd=0.05)
+    e_indep = Model(dict(c, indicators=indep)).run(sel, end=days[-1]).ms[t, L] - l_true[t]
+    e_shared = Model(dict(c, indicators=shared, factors={"dev": {"drift": dc}})).run(sel, end=days[-1]).ms[t, L] - l_true[t]
+    assert e_indep > 0.2                       # the common drift is read as revenue growth
+    assert e_shared < e_indep - 0.03           # sharing the drift cuts the overreaction
+
+
+def test_quarter_volatility_scale_widens_growth_uncertainty():
+    p = {"prior_g_sd": 0.05, "sigma_g": 0.01}
+    a = Model(p).run(None, end="2026-03-31", queries=[("2026-01-01", "2026-03-31")], smooth=False)
+    b = Model(dict(p, vol_scales={"2026Q1": math.log(4.0)})).run(None, end="2026-03-31",
+                                                                  queries=[("2026-01-01", "2026-03-31")], smooth=False)
+    i0, i1 = a.idx("2025-12-31"), a.idx("2026-03-31")
+    da = a.P_f[i1][G, G] - a.P_f[i0][G, G]
+    db = b.P_f[i1][G, G] - b.P_f[i0][G, G]
+    assert db == pytest.approx(4 * da, rel=0.05)
+
+
+def test_laplace_posterior_is_proper():
+    from runrate_nowcast import bayes
+    days, l_true, _, df = _simulate()
+    sel = data.select(df)
+    spec = [{"name": "sigma_g", "kind": "log", "mu": math.log(0.01), "sd": 1.0, "path": ("sigma_g",)},
+            {"name": "kappa", "kind": "log", "mu": math.log(0.1), "sd": 1.5, "path": ("growth_reversion",)}]
+    post = bayes.Posterior(sel, {"sigma_l": 0.004}, spec, workers=1).fit(maxiter=30).laplace()
+    assert np.all(np.linalg.eigvalsh(post.cov) > 0)
+    assert np.isfinite(post.log_evidence)
+    draws = post.draws(8)
+    assert len(draws) == 8 and np.allclose(draws[0], post.theta_hat)

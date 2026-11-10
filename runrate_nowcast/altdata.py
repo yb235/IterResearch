@@ -41,7 +41,7 @@ UA = "runrate-nowcast/0.2 (research script)"
 HOLIDAY_START, HOLIDAY_END = 1220, 106      # MMDD: Dec 20 .. Jan 6
 CATALOG_COLS = ["indicator", "segment", "role", "beta", "beta_sd", "obs_sd", "drift", "prior_sd",
                 "lag_days", "aggregate", "publish_delay_days", "frequency", "access", "fetcher",
-                "source_url", "description", "breaks"]
+                "source_url", "description", "breaks", "factor"]
 RAW_COLS = ["date", "indicator", "value", "published", "source", "note"]
 
 
@@ -62,7 +62,8 @@ def indicator_params(cat: pd.DataFrame | None = None, overrides: dict | None = N
         spec = {"segment": r.segment, "beta": float(r.beta), "beta_sd": float(r.beta_sd),
                 "obs_sd": float(r.obs_sd), "drift": float(r.drift), "prior_sd": float(r.prior_sd),
                 "lag_days": float(r.lag_days), "role": r.role,
-                "breaks": [d for d in str(r.breaks).split(";") if d and d != "nan"]}
+                "breaks": [d for d in str(r.breaks).split(";") if d and d != "nan"],
+                "factor": "" if str(r.factor) == "nan" else str(r.factor)}
         ov = (overrides or {}).get(r.indicator)
         if ov:
             spec.update(ov)
