@@ -38,6 +38,7 @@ import pandas as pd
 from . import config
 
 UA = "runrate-nowcast/0.2 (research script)"
+HOLIDAY_START, HOLIDAY_END = 1220, 106      # MMDD: Dec 20 .. Jan 6
 CATALOG_COLS = ["indicator", "segment", "role", "beta", "beta_sd", "obs_sd", "drift", "prior_sd",
                 "lag_days", "aggregate", "publish_delay_days", "frequency", "access", "fetcher",
                 "source_url", "description", "breaks"]
@@ -102,6 +103,10 @@ def indicator_observations(roles=("model",), cat: pd.DataFrame | None = None,
         delay = pd.Timedelta(days=float(spec.publish_delay_days))
         if spec.aggregate == "weekly_mean":
             s = s.set_index("date").sort_index()
+            # Same calendar rule as break detection: drop Dec 20 - Jan 6, whose dip and
+            # rebound hit every series and say nothing about Anthropic's revenue.
+            md = s.index.month * 100 + s.index.day
+            s = s[~((md >= HOLIDAY_START) | (md <= HOLIDAY_END))]
             g = s["value"].resample("W-SUN")
             wk = pd.DataFrame({"value": g.mean(), "n": g.count()})
             wk = wk[wk.n >= 5]

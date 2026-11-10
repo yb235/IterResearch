@@ -227,3 +227,26 @@ def test_forecast_claims_excluded_unless_requested():
     ])
     assert data.select(df).obs_id.tolist() == ["o"]
     assert set(data.select(df, forecasts=True).obs_id) == {"o", "f"}
+
+
+def test_break_rule_matches_catalog_and_ignores_holidays():
+    """Catalog breaks must be exactly what the rule detects; a holiday dip is not a break."""
+    from runrate_nowcast import altdata, robust
+    found = robust.detect_breaks()
+    detected = {(r.source_pair.split(" / ")[0], r.date.strftime("%Y-%m-%d")) for r in found.itertuples()}
+    cat = altdata.indicator_params()
+    listed = {(k, d) for k, v in cat.items() for d in v.get("breaks", []) if not k.endswith("openai")}
+    assert listed == detected
+
+    days = pd.date_range("2025-11-01", "2026-03-31", freq="D")
+    base = pd.Series(100.0, index=days)
+    md = days.month * 100 + days.day
+    holiday = base.where(~((md >= 1222) | (md <= 103)), 55.0)           # dips, then recovers
+    raw = pd.concat([pd.DataFrame({"date": days, "indicator": n, "value": holiday.values, "published": pd.NaT,
+                                   "source": "", "note": ""}) for n in ("pypi_anthropic", "pypi_openai")])
+    assert robust.detect_breaks(raw, pairs=(("pypi_anthropic", "pypi_openai"),)).empty
+    stepped = base.where(days < "2026-02-10", 60.0)                      # permanent counting change
+    raw2 = pd.concat([pd.DataFrame({"date": days, "indicator": n, "value": stepped.values, "published": pd.NaT,
+                                    "source": "", "note": ""}) for n in ("pypi_anthropic", "pypi_openai")])
+    hit = robust.detect_breaks(raw2, pairs=(("pypi_anthropic", "pypi_openai"),))
+    assert len(hit) == 1 and abs((hit.date.iloc[0] - pd.Timestamp("2026-02-10")).days) <= 1

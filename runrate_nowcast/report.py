@@ -107,7 +107,52 @@ def _fmt_rr(d):
     return f"{d['median']:.1f} [{d['q10']:.1f}, {d['q90']:.1f}]"
 
 
-def markdown(df, params, asof) -> str:
+def robust_headline(df, params, asof, z_sd_oos: float | None = None) -> list[str]:
+    """Headline numbers averaged over indicator specifications (lag, beta, drift), see robust.py."""
+    from . import robust
+    asof = pd.Timestamp(asof)
+    grid = robust.spec_grid(df, params, asof)
+    q = asof.to_period("Q")
+    period = f"{q.start_time:%Y-%m-%d}..{q.end_time:%Y-%m-%d}"
+    month_end = (asof - pd.DateOffset(months=1)) + pd.offsets.MonthEnd(0)
+    dates = (f"{month_end:%Y-%m-%d}", f"{asof:%Y-%m-%d}")
+    comps, summ = robust.averaged_nowcast(df, params, asof, grid, dates=dates, period=period)
+    lagp = robust.lag_posterior(grid)
+    out = ["## Headline (averaged over indicator specifications)\n",
+           "The nowcast depends on indicator choices the backtest cannot tell apart: lead/lag, elasticity "
+           "beta, intercept drift. These are integrated over a grid, each specification weighted by "
+           "prior × online-filter likelihood (robust.py), not picked by hand.\n",
+           "| Quantity | Spec-averaged (80%) | Calibrated to out-of-sample error |",
+           "|---|---|---|"]
+
+    def widen(med, lo, hi, logscale=True):
+        if not z_sd_oos:
+            return "n/a"
+        if logscale:
+            return f"[{med * (lo / med) ** z_sd_oos:.1f}, {med * (hi / med) ** z_sd_oos:.1f}]"
+        return f"[{med - (med - lo) * z_sd_oos:.1f}, {med + (hi - med) * z_sd_oos:.1f}]"
+
+    for d in dates:
+        r = summ[f"runrate_{d}"]
+        out.append(f"| Run-rate, official basis, {d} | {r['median']:.1f} [{r['q10']:.1f}, {r['q90']:.1f}] | "
+                   f"{widen(r['median'], r['q10'], r['q90'])} |")
+    r = summ[f"revenue_{period}"]
+    out.append(f"| Revenue {period} | {r['mean']:.1f} [{r['q10']:.1f}, {r['q90']:.1f}] | "
+               f"{widen(r['mean'], r['q10'], r['q90'], logscale=False)} |")
+    out.append("")
+    out.append("Posterior weight by indicator lag (days; + = indicator trails revenue): " +
+               ", ".join(f"{int(k):+d}: {v:.0%}" for k, v in lagp.items()) + ".")
+    top = comps.sort_values("weight", ascending=False).head(3)
+    out.append("Top specifications: " + "; ".join(
+        f"lag {int(r.lag):+d}, beta {r.beta:.2f}, drift ×{r.drift_mult:g} ({r.weight:.0%})" for r in top.itertuples()) + ".")
+    if z_sd_oos:
+        out.append(f"Calibrated column: the strict out-of-sample backtest had z sd = {z_sd_oos:.2f}, so model "
+                   f"intervals are widened by that factor (n = 13 targets, so this factor is itself uncertain).")
+    out.append("")
+    return out
+
+
+def markdown(df, params, asof, robust: bool = True, z_sd_oos: float | None = None) -> str:
     asof = pd.Timestamp(asof)
     model, res, sel = run_nowcast(df, params, asof)
     tiers = model.p["tiers"]
@@ -123,7 +168,9 @@ def markdown(df, params, asof) -> str:
                f"{len(sel)} observations used after dedup ({int((sel.metric == 'indicator').sum())} indicator-weeks); "
                f"smoother converged in {res.iterations} passes.\n")
 
-    out.append("## Run-rate\n")
+    if robust:
+        out.extend(robust_headline(df, params, asof, z_sd_oos))
+    out.append("## Run-rate (single fitted specification)\n")
     out.append("| Date | GAAP basis (instantaneous) | Official basis (t28×13 + b) | Growth (log/month) |")
     out.append("|---|---|---|---|")
     last_q = (asof.to_period("Q") - 1).end_time.normalize()

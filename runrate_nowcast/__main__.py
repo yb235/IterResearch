@@ -28,6 +28,8 @@ def main(argv=None):
     ap.add_argument("--data", default=config.DATA_PATH)
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("nowcast"); p.add_argument("--asof", default=None); p.add_argument("--plot", action="store_true")
+    p.add_argument("--no-robust", action="store_true", help="skip the specification-averaged headline")
+    p.add_argument("--z-sd", type=float, default=None, help="out-of-sample z sd from `layers --refit` (variant C)")
     p = sub.add_parser("fit"); p.add_argument("--write", action="store_true")
     p = sub.add_parser("calibrate"); p.add_argument("--write", action="store_true")
     p.add_argument("--min-points", type=int, default=3)
@@ -54,7 +56,7 @@ def main(argv=None):
     asof = pd.Timestamp(getattr(a, "asof", None) or pd.Timestamp.today().normalize())
 
     if a.cmd == "nowcast":
-        md = report.markdown(df, params, asof)
+        md = report.markdown(df, params, asof, robust=not a.no_robust, z_sd_oos=a.z_sd)
         os.makedirs(config.OUTPUT_DIR, exist_ok=True)
         out = os.path.join(config.OUTPUT_DIR, f"nowcast_{asof:%Y-%m-%d}.md")
         with open(out, "w") as f:

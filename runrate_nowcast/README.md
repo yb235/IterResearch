@@ -138,11 +138,14 @@ python -m pytest runrate_nowcast/tests -q                    # 10 个测试，�
 | `kind` | `point` 点值；`lower` 下界（“超过 $X”）；`upper` 上界 |
 | `ref_date` / `period_start`,`period_end` | 数字对应的日期 / 收入期间 |
 | `definition` | run-rate 口径：`t28x13`（Anthropic 官方，滞后 14 天）、`month_x12`、`instant`、`unknown`（滞后 7 天，再加 10 天日期不确定性） |
-| `date_sd_days` | 日期不确定性（天），按当时的增长率换算成观测噪声 |
+| `date_lo` / `date_hi` / `date_rule` | 原文措辞允许的时间窗口和措辞依据（例如“本月早些时候突破” → 5/1–5/28）。有窗口时，日期取中点，`date_sd_days` = 窗口宽度 / √12（窗口内均匀分布），不再手填 |
+| `date_sd_days` | 日期不确定性（天），按当时的增长率换算成观测噪声。没有窗口的行（审计数字、指标）为 0 |
 | `published` | 信息首次公开的日期，回测按它冻结信息集 |
 | `tier` | `gaap` > `official` > `leak_tier1` > `leak_single` > `third_party` > `secondary` |
 | `origin_id` | 去重键。转引同一原始报道的行共用一个 id，只算一次观测 |
-| `include` | 0 表示排除（误引、预测性表述等） |
+| `include` | 0 表示排除（误引等） |
+| `segment` | `total` 或分部名（`subscription`、`cloud`、`claude_code`…） |
+| `is_forecast` | 1 = 预测类说法（公司目标、投资者预期），只记分，不进滤波器 |
 
 参与估计的观测（去重后共 22 条）：
 

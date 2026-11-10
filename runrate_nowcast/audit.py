@@ -133,10 +133,10 @@ def checks():
          [("7", lambda df, p: _with_lag(df, p, "t28x13", 7)), ("21", lambda df, p: _with_lag(df, p, "t28x13", 21))]),
         ("'unknown' definition lag", "claim encoding", "7 days (hand-set)",
          [("0", lambda df, p: _with_lag(df, p, "unknown", 0)), ("14", lambda df, p: _with_lag(df, p, "unknown", 14))]),
-        ("date uncertainty (date_sd_days)", "claim encoding", "3-20 days per claim (hand-set)",
+        ("date uncertainty (date_sd_days)", "claim encoding", "window width / sqrt(12) from source wording",
          [("x0.5", lambda df, p: E(_df_edit(df, lambda d: d.__setitem__("date_sd_days", d.date_sd_days * 0.5)), p)),
           ("x2", lambda df, p: E(_df_edit(df, lambda d: d.__setitem__("date_sd_days", d.date_sd_days * 2)), p))]),
-        ("crossing-date placement", "claim encoding", "mid-window guess for 'crossed $X' dates",
+        ("crossing-date placement", "claim encoding", "window midpoint from source wording",
          [("-7d", lambda df, p: E(_df_edit(df, lambda d: _shift_dates(d, CROSSING, -7)), p)),
           ("+7d", lambda df, p: E(_df_edit(df, lambda d: _shift_dates(d, CROSSING, 7)), p))]),
         ("'over $X' as lower bound", "claim encoding", "rule: truncated observation",
@@ -155,9 +155,7 @@ def checks():
          [("tight x0.5", lambda df, p: E(df, _p(p, prior_l_sd=0.25, prior_g_sd=0.1, prior_b_sd=0.125))),
           ("wide x2", lambda df, p: E(df, _p(p, prior_l_sd=1.0, prior_g_sd=0.4, prior_b_sd=0.5)))]),
         # ---- segment layer
-        ("share-as-point approximation noise", "segment", "0.03 (hand-set)",
-         [("0.01", lambda df, p: _with_attr(df, p, config, "SHARE_APPROX_SD", 0.01)),
-          ("0.06", lambda df, p: _with_attr(df, p, config, "SHARE_APPROX_SD", 0.06))]),
+
         ("sum-to-one constraint noise", "segment", "0.005 weekly (hand-set)",
          [("0.001", lambda df, p: _with_attr(df, p, config, "CONSTRAINT_SD", 0.001)),
           ("0.02", lambda df, p: _with_attr(df, p, config, "CONSTRAINT_SD", 0.02))]),
@@ -170,7 +168,8 @@ def checks():
          [("round: beta .85 drift .01", lambda df, p: E(df, _indicators(p, beta=0.85, drift=0.01, obs_sd=0.04))),
           ("round: beta 1 drift .03", lambda df, p: E(df, _indicators(p, beta=1.0, drift=0.03, obs_sd=0.04)))]),
         ("indicator lead/lag", "indicator", "0 days (assumed contemporaneous)",
-         [("leads 7d", lambda df, p: E(_ind_lag(df, -7), p)), ("lags 7d", lambda df, p: E(_ind_lag(df, 7), p))]),
+         [("leads 7d", lambda df, p: E(_ind_lag(df, -7), _shift_breaks(p, -7))),
+          ("lags 7d", lambda df, p: E(_ind_lag(df, 7), _shift_breaks(p, 7)))]),
         ("break variance", "indicator", "0.5 (hand-set)",
          [("0.2", lambda df, p: _with_attr(df, p, model_mod, "BREAK_SD", 0.2)),
           ("1.0", lambda df, p: _with_attr(df, p, model_mod, "BREAK_SD", 1.0))]),
@@ -181,6 +180,14 @@ def checks():
         ("PyPI break handling", "indicator", "break at 2026-08-25",
          [("no break", lambda df, p: E(df, _one_indicator(p, "pypi_anthropic", breaks=[])))]),
     ]
+
+
+def _shift_breaks(params, lag):
+    """Break dates live in the indicator's calendar and must move with a lag shift."""
+    p = copy.deepcopy(params)
+    for spec in p["indicators"].values():
+        spec["breaks"] = [f"{pd.Timestamp(d) - pd.Timedelta(days=lag):%Y-%m-%d}" for d in spec.get("breaks", [])]
+    return p
 
 
 def _with_lag(df, p, definition, days):
