@@ -13,7 +13,7 @@ PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(PKG_DIR, "data", "observations.csv")
 PARAMS_PATH = os.path.join(PKG_DIR, "params.json")
 REGISTRY_PATH = os.path.join(PKG_DIR, "forecasts", "registry.jsonl")
-OUTPUT_DIR = os.path.join(PKG_DIR, "output")
+OUTPUT_DIR = os.path.join(PKG_DIR, "reports")
 
 MODEL_START = "2025-01-01"
 DAYS_PER_YEAR = 365.0

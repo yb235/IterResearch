@@ -4,13 +4,15 @@
 
 ```bash
 pip install -r runrate_nowcast/requirements.txt
-python -m runrate_nowcast nowcast --asof 2026-11-10 --plot   # 报告和图写入 output/
+python -m runrate_nowcast nowcast --asof 2026-11-10 --plot   # 报告和图写入 reports/
 python -m pytest runrate_nowcast/tests -q                    # 5 个测试，约 7 秒
 ```
 
 ---
 
 ## 1. 结论速览（截至 2026-11-10）
+
+完整报告：[`reports/nowcast_2026-11-10.md`](reports/nowcast_2026-11-10.md)；图：[`reports/nowcast_2026-11-10.png`](reports/nowcast_2026-11-10.png)。
 
 区间均为 80%。**官方口径**：按 Anthropic 的 run-rate 定义（trailing 28 天 ×13，相当于滞后 14 天），再加上估计出的口径差 b，也就是公司当天若公布会给出的数字。**GAAP 口径**：与 S-1 季度收入一致的瞬时年化收入。
 

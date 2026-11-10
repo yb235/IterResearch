@@ -1,6 +1,6 @@
 """CLI.
 
-python -m runrate_nowcast nowcast [--asof D] [--plot]   # report -> output/
+python -m runrate_nowcast nowcast [--asof D] [--plot]   # report -> reports/
 python -m runrate_nowcast fit [--write]                  # MAP process noise -> params.json
 python -m runrate_nowcast calibrate [--write]            # per-tier bias/noise vs GAAP path
 python -m runrate_nowcast backtest [--refit]             # vintage backtest + coverage
