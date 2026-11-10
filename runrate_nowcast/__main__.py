@@ -50,7 +50,7 @@ def main(argv=None):
     p.add_argument("--lags", action="store_true", help="also mix over indicator lag and definition lag by evidence")
     p.add_argument("--register", action="store_true", help="append the summary to forecasts/registry.jsonl")
     sub.add_parser("bayes-backtest")
-    sub.add_parser("plot-errors")
+    p = sub.add_parser("plot-errors"); p.add_argument("--asof", default=None)
     a = ap.parse_args(argv)
 
     warnings.simplefilter("ignore")
