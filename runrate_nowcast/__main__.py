@@ -14,6 +14,7 @@ python -m runrate_nowcast audit                          # sensitivity of conclu
 python -m runrate_nowcast ml                             # ML on interpolated labels: backtest + current nowcast
 python -m runrate_nowcast bayes [--lags]                 # posterior (MAP + Laplace) nowcast
 python -m runrate_nowcast bayes-backtest                 # strict backtest with posterior refit per vintage
+python -m runrate_nowcast plot-errors                    # charts: actual vs forecast over time, forecast evolution
 """
 from __future__ import annotations
 
@@ -49,6 +50,7 @@ def main(argv=None):
     p.add_argument("--lags", action="store_true", help="also mix over indicator lag and definition lag by evidence")
     p.add_argument("--register", action="store_true", help="append the summary to forecasts/registry.jsonl")
     sub.add_parser("bayes-backtest")
+    sub.add_parser("plot-errors")
     a = ap.parse_args(argv)
 
     warnings.simplefilter("ignore")
@@ -167,6 +169,11 @@ def main(argv=None):
         bt = bayes.bayes_backtest(df, params)
         bt.to_csv(os.path.join(config.OUTPUT_DIR, f"bayes_backtest_{asof:%Y-%m-%d}.csv"), index=False)
         print(bayes.summarize(bt).round(3).to_string())
+
+    elif a.cmd == "plot-errors":
+        from . import plot_backtest
+        d, p1, p2 = plot_backtest.run(f"{asof:%Y-%m-%d}")
+        print(f"-> {p1}\n-> {p2}")
 
     elif a.cmd == "audit":
         from . import audit
