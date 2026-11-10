@@ -250,3 +250,19 @@ def test_break_rule_matches_catalog_and_ignores_holidays():
                                     "source": "", "note": ""}) for n in ("pypi_anthropic", "pypi_openai")])
     hit = robust.detect_breaks(raw2, pairs=(("pypi_anthropic", "pypi_openai"),))
     assert len(hit) == 1 and abs((hit.date.iloc[0] - pd.Timestamp("2026-02-10")).days) <= 1
+
+
+def test_ml_uses_only_data_public_before_the_vintage():
+    """Leakage guard: anchors and features must be public on or before the vintage."""
+    from runrate_nowcast import altdata, ml
+    df, raw = data.load_all(), altdata.load_raw()
+    vintage = pd.Timestamp("2026-05-27")
+    anch = ml.anchors(df, vintage)
+    sel = data.select(df[df.metric != "indicator"], vintage=vintage)
+    assert set(anch.index) <= set(pd.to_datetime(sel.t_eff)) | {
+        r.period_start + pd.Timedelta(days=((r.period_end - r.period_start).days + 1) // 2)
+        for r in sel[sel.metric == "revenue"].itertuples()}
+    assert (sel.published <= vintage).all()
+    feats = ml.weekly_features(raw, vintage)
+    # week centre + 3 days = Sunday week end; data for that week is public the next day
+    assert (feats.index + pd.Timedelta(days=4) <= vintage).all()
