@@ -7,6 +7,9 @@ python -m runrate_nowcast backtest [--refit]             # vintage backtest + co
 python -m runrate_nowcast alerts --since D [--asof D]    # new claims scored against the prior forecast
 python -m runrate_nowcast register [--asof D] [--note T] # time-stamped forecast -> forecasts/registry.jsonl
 python -m runrate_nowcast score                          # score registered forecasts
+python -m runrate_nowcast update-data                    # fetch npm / PyPI / Ramp indicators
+python -m runrate_nowcast fit-indicators [--write]       # MAP beta / drift / noise per indicator
+python -m runrate_nowcast layers                         # backtest one layer at a time
 """
 from __future__ import annotations
 
@@ -31,12 +34,20 @@ def main(argv=None):
     p = sub.add_parser("alerts"); p.add_argument("--since", required=True); p.add_argument("--asof", default=None)
     p = sub.add_parser("register"); p.add_argument("--asof", default=None); p.add_argument("--note", default="")
     sub.add_parser("score")
+    p = sub.add_parser("update-data"); p.add_argument("--start", default="2025-01-01")
+    p = sub.add_parser("fit-indicators"); p.add_argument("--write", action="store_true")
+    sub.add_parser("layers")
     a = ap.parse_args(argv)
 
     warnings.simplefilter("ignore")
     pd.set_option("display.width", 220)
     pd.set_option("display.max_columns", 30)
-    df = data.load(a.data)
+    if a.cmd == "update-data":
+        from . import altdata
+        altdata.update(start=a.start)
+        print(f"-> {config.INDICATORS_PATH}")
+        return
+    df = data.load_all(a.data)
     params = calibrate.load_params()
     asof = pd.Timestamp(getattr(a, "asof", None) or pd.Timestamp.today().normalize())
 
@@ -49,10 +60,11 @@ def main(argv=None):
         print(md)
         print(f"-> {out}")
         if a.plot:
-            from .plot import plot
+            from .plot import plot, plot_layers
             _, res, sel = report.run_nowcast(df, params, asof)
             png = plot(res, sel, asof, os.path.join(config.OUTPUT_DIR, f"nowcast_{asof:%Y-%m-%d}.png"))
-            print(f"-> {png}")
+            png2 = plot_layers(res, sel, asof, os.path.join(config.OUTPUT_DIR, f"layers_{asof:%Y-%m-%d}.png"))
+            print(f"-> {png}\n-> {png2}")
 
     elif a.cmd == "fit":
         fit = calibrate.fit_process_noise(df, params)
@@ -89,6 +101,15 @@ def main(argv=None):
         for k, v in e["revenue"].items():
             print(f"  revenue {k}: {v['mean']:.2f} [{v['q10']:.2f}, {v['q90']:.2f}]")
         print(f"-> {config.REGISTRY_PATH} (commit it now)")
+
+    elif a.cmd == "fit-indicators":
+        out, fitted = calibrate.fit_indicators(df, params)
+        if a.write:
+            calibrate.save_params(fitted)
+            print(f"-> {config.PARAMS_PATH}")
+
+    elif a.cmd == "layers":
+        print(backtest.layer_ablation(df, params).round(3).to_string(index=False))
 
     elif a.cmd == "score":
         sc = registry.score(df, params)

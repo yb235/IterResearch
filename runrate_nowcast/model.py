@@ -1,24 +1,33 @@
-"""State-space model for run-rate revenue: filter, truncated updates, RTS smoother.
+"""State-space model for run-rate revenue: three layers in one filter.
 
 State (one step per calendar day):
-    l    log instantaneous annualized revenue ($B), on the GAAP revenue basis
-    g    log growth per month (local linear trend: l' = l + g/30.44; optionally damped
-         toward a long-run rate: g' = g + kappa (g_bar - g)/30.44)
-    b    log gap between reported run-rate (company definition) and GAAP revenue
-         (gross vs net cloud revenue, subscription annualization, and similar)
-    A_k  revenue accumulated so far in period k ($B). One accumulator per
-         revenue period that is observed or asked about (quarter, year, month).
+  Total layer
+    l      log instantaneous annualized revenue ($B), on the GAAP revenue basis
+    g      log growth per month (local linear trend: l' = l + g/30.44; optionally damped
+           toward a long-run rate: g' = g + kappa (g_bar - g)/30.44)
+    b      log gap between reported run-rate (company definition) and GAAP revenue
+  Segment layer
+    s_k    log share of segment k in total revenue (random walk). Partition segments
+           (consumption vs subscription) carry a soft sum(exp(s_k)) = 1 constraint.
+           Overlays (cloud channel, Claude Code) do not.
+  Leading-indicator layer
+    a_i    log intercept of indicator i (random walk). The indicator is observed as
+           log(I_t) = a_i + beta_i * (l + s_seg)(t - lag_i) + noise.
+           The drifting intercept means the indicator-to-revenue relationship is not
+           taken as fixed: levels come from audited and official figures, and the
+           indicators mostly carry information about changes. A known break in how a
+           source counts (catalog `breaks`) adds a one-off variance bump to a_i.
+  Revenue accumulators
+    A_k    revenue accumulated so far in period k ($B). Quarterly GAAP revenue is an
+           exact integral of the daily path.
 
-Revenue on day t is exp(l)/365, so the accumulators are a nonlinear function of l. The
-predict step matches moments exactly: if x ~ N(m, P) and u = c'x, then
-E[e^u] = exp(c'm + c'Pc/2) and, by Stein's lemma, Cov(x, e^u) = P c E[e^u]. This
-gives the mean and covariance of the next state without linearizing.
-Observation equations are linear in the state:
-    run-rate claim (log):  y = l(t - lag) + b + tier_bias + noise
-    revenue claim ($B):    y = A_k(period_end) + noise
-Claims like "over $X" or "at most $X" are truncated observations. They are applied by
-moment-matching the truncated normal of the observed linear combination, as in
-assumed-density filtering.
+Revenue on day t is exp(l)/365, a nonlinear function of the state. The predict step uses
+statistical linear regression about a linearization point; about the filter's own
+estimate this is exact moment matching (Stein's lemma). The smoother is an iterated
+posterior linearization smoother: each pass re-linearizes the dynamics and the share
+constraint about the previous pass's smoothed marginals.
+Claims like "over $X" or "at most $X" are truncated observations, applied by
+moment-matching the truncated normal (assumed-density filtering).
 """
 from __future__ import annotations
 
@@ -35,6 +44,7 @@ from . import config
 L, G, B = 0, 1, 2
 N_BASE = 3
 Z80 = 1.2815515655446004
+BREAK_SD = 0.5
 
 
 @dataclass
@@ -49,6 +59,31 @@ def period_key(start, end) -> str:
 
 
 @dataclass
+class Layout:
+    segments: list
+    indicators: list
+    periods: list
+
+    @property
+    def n(self):
+        return N_BASE + len(self.segments) + len(self.indicators) + len(self.periods)
+
+    def seg(self, name):
+        return N_BASE + self.segments.index(name)
+
+    def ind(self, name):
+        return N_BASE + len(self.segments) + self.indicators.index(name)
+
+    @property
+    def acc0(self):
+        return N_BASE + len(self.segments) + len(self.indicators)
+
+    @property
+    def n_core(self):
+        return N_BASE + len(self.segments)
+
+
+@dataclass
 class Obs:
     obs_id: str
     t: int
@@ -60,6 +95,7 @@ class Obs:
     base_var: float
     date_sd: float
     tier: str
+    constraint: bool = False
 
 
 @dataclass
@@ -81,7 +117,7 @@ class Innovation:
 class Result:
     start: pd.Timestamp
     dates: pd.DatetimeIndex
-    periods: list
+    layout: Layout
     m_pred: np.ndarray
     P_pred: np.ndarray
     m_f: np.ndarray
@@ -93,6 +129,10 @@ class Result:
     ms_prev: np.ndarray | None = None
     Ps_prev: np.ndarray | None = None
     iterations: int = 1
+
+    @property
+    def periods(self):
+        return self.layout.periods
 
     # helpers
     def idx(self, date) -> int:
@@ -108,13 +148,13 @@ class Result:
         return self.m_f[i], self.P_f[i]
 
     def pk(self, key) -> int:
-        for k, p in enumerate(self.periods):
+        for k, p in enumerate(self.layout.periods):
             if p.key == key:
-                return N_BASE + k
+                return self.layout.acc0 + k
         raise KeyError(key)
 
-    def log_runrate(self, date, definition="instant", smoothed=True):
-        """Mean and sd of log run-rate at `date` under a reporting definition."""
+    def log_runrate(self, date, definition="instant", smoothed=True, segment="total"):
+        """Mean and sd of log run-rate (total or one segment) at `date` under a definition."""
         lag = config.DEFINITION_LAG_DAYS[definition]
         d = pd.Timestamp(date) - pd.Timedelta(days=round(lag))
         m, P = self.state(d, smoothed)
@@ -122,11 +162,23 @@ class Result:
         h[L] = 1.0
         if definition != "instant":
             h[B] = 1.0
+        if segment != "total":
+            h[self.layout.seg(segment)] = 1.0
         return float(h @ m), float(math.sqrt(max(h @ P @ h, 0.0)))
 
-    def runrate(self, date, definition="instant", smoothed=True) -> dict:
-        mu, sd = self.log_runrate(date, definition, smoothed)
+    def runrate(self, date, definition="instant", smoothed=True, segment="total") -> dict:
+        mu, sd = self.log_runrate(date, definition, smoothed, segment)
         return lognormal_summary(mu, sd)
+
+    def share(self, date, segment, smoothed=True) -> dict:
+        m, P = self.state(date, smoothed)
+        j = self.layout.seg(segment)
+        return lognormal_summary(float(m[j]), float(math.sqrt(max(P[j, j], 0.0))))
+
+    def indicator_intercept(self, date, name, smoothed=True):
+        m, P = self.state(date, smoothed)
+        j = self.layout.ind(name)
+        return float(m[j]), float(math.sqrt(max(P[j, j], 0.0)))
 
     def growth(self, date, smoothed=True):
         m, P = self.state(date, smoothed)
@@ -138,7 +190,7 @@ class Result:
 
     def period_revenue(self, key, smoothed=True) -> dict:
         j = self.pk(key)
-        p = self.periods[j - N_BASE]
+        p = self.layout.periods[j - self.layout.acc0]
         end = min(p.end, self.dates[-1])
         m, P = self.state(end, smoothed)
         mu, sd = float(m[j]), float(math.sqrt(max(P[j, j], 0.0)))
@@ -159,20 +211,51 @@ def lognormal_summary(mu, sd) -> dict:
             "log_mu": mu, "log_sd": sd}
 
 
+def _col(row, name, default):
+    v = getattr(row, name, default)
+    if v is None or (isinstance(v, float) and math.isnan(v)) or v == "":
+        return default
+    return v
+
+
 class Model:
     def __init__(self, params: dict | None = None, start: str = config.MODEL_START):
         p = dict(config.DEFAULT_PARAMS)
+        tiers = {k: dict(v) for k, v in config.TIERS.items()}
+        segments = {k: dict(v) for k, v in config.SEGMENTS.items()}
+        indicators = {}
         if params:
-            p.update({k: v for k, v in params.items() if k != "tiers"})
-            if "tiers" in params:
-                tiers = {k: dict(v) for k, v in config.TIERS.items()}
-                for t, v in params["tiers"].items():
-                    tiers.setdefault(t, {}).update(v)
-                p["tiers"] = tiers
+            p.update({k: v for k, v in params.items() if k not in ("tiers", "segments", "indicators")})
+            for t, v in params.get("tiers", {}).items():
+                tiers.setdefault(t, {}).update(v)
+            for s, v in params.get("segments", {}).items():
+                segments.setdefault(s, {}).update(v)
+            indicators = {k: dict(v) for k, v in params.get("indicators", {}).items()}
+        p["tiers"], p["segments"], p["indicators"] = tiers, segments, indicators
         self.p = p
         self.start = pd.Timestamp(start)
 
     # ------------------------------------------------------------------ build
+    def layout(self, obs_df, queries, segments=None) -> Layout:
+        segs, inds = set(segments or []), []
+        if obs_df is not None and len(obs_df):
+            for r in obs_df.itertuples():
+                s = _col(r, "segment", "total")
+                if s != "total":
+                    segs.add(s)
+                if r.metric == "indicator":
+                    name = _col(r, "indicator", "")
+                    if name not in inds:
+                        inds.append(name)
+                    s = self.p["indicators"][name].get("segment", "total")
+                    if s != "total":
+                        segs.add(s)
+        # Any partition segment in use pulls in the rest of the partition.
+        if any(self.p["segments"][s]["partition"] for s in segs):
+            segs |= {s for s, v in self.p["segments"].items() if v["partition"]}
+        order = [s for s in self.p["segments"] if s in segs]
+        return Layout(order, inds, self._periods(obs_df, queries))
+
     def _periods(self, obs_df, queries):
         seen, out = set(), []
         rows = [] if obs_df is None else obs_df[obs_df.metric == "revenue"][["period_start", "period_end"]].values.tolist()
@@ -187,91 +270,125 @@ class Model:
             out.append(Period(key, s, e))
         return out
 
-    def _compile(self, obs_df, periods, n):
-        tiers = self.p["tiers"]
-        keyidx = {p.key: N_BASE + k for k, p in enumerate(periods)}
+    def obs_vector(self, row, lay: Layout):
+        """(H, y, offset, base_var, date_sd) for one claim; shared by the filter and predictive."""
+        n = lay.n
+        H = np.zeros(n)
+        tier = self.p["tiers"][row.tier]
+        seg = _col(row, "segment", "total")
+        if row.metric == "run_rate":
+            H[L] = H[B] = 1.0
+            if seg != "total":
+                H[lay.seg(seg)] = 1.0
+            y, offset = math.log(row.value), tier.get("bias", 0.0)
+            base_var, date_sd = tier["log_sd"] ** 2, float(_col(row, "date_sd_days", 0.0))
+        elif row.metric == "revenue":
+            if seg != "total":
+                raise ValueError(f"{row.obs_id}: segment revenue is entered as metric=share")
+            H[lay.acc0 + [p.key for p in lay.periods].index(period_key(row.period_start, row.period_end))] = 1.0
+            y, offset = float(row.value), 0.0
+            base_var, date_sd = (tier["log_sd"] * row.value) ** 2, 0.0
+        elif row.metric == "share":
+            H[lay.seg(seg)] = 1.0
+            y, offset = math.log(row.value), 0.0
+            base_var, date_sd = tier["log_sd"] ** 2 + config.SHARE_APPROX_SD ** 2, 0.0
+        elif row.metric == "indicator":
+            spec = self.p["indicators"][row.indicator]
+            beta = float(spec.get("beta", 1.0))
+            H[lay.ind(row.indicator)] = 1.0
+            H[L] = beta
+            s = spec.get("segment", "total")
+            if s != "total":
+                H[lay.seg(s)] = beta
+            y, offset = math.log(row.value), 0.0
+            base_var, date_sd = float(spec.get("obs_sd", 0.1)) ** 2, 0.0
+        else:
+            raise ValueError(f"unknown metric {row.metric}")
+        if int(_col(row, "is_forecast", 0)) == 1:
+            h_months = max((pd.Timestamp(row.ref_date) - pd.Timestamp(row.published)).days, 0) / config.DAYS_PER_MONTH
+            base_var += (self.p.get("forecast_sd_per_month", config.FORECAST_SD_PER_MONTH) * h_months) ** 2
+        return H, y, offset, base_var, date_sd
+
+    def _compile(self, obs_df, lay):
         out = []
         for r in obs_df.itertuples():
             t = (pd.Timestamp(r.t_eff) - self.start).days
             if t < 0:
                 continue
-            H = np.zeros(n)
-            tier = tiers[r.tier]
-            if r.metric == "run_rate":
-                H[L] = 1.0
-                H[B] = 1.0
-                y = math.log(r.value)
-                offset = tier.get("bias", 0.0)
-                base_var = tier["log_sd"] ** 2
-                date_sd = float(r.date_sd_days)
-            else:
-                H[keyidx[period_key(r.period_start, r.period_end)]] = 1.0
-                y = float(r.value)
-                offset = 0.0
-                base_var = (tier["log_sd"] * r.value) ** 2
-                date_sd = 0.0
+            H, y, offset, base_var, date_sd = self.obs_vector(r, lay)
             out.append(Obs(r.obs_id, t, r.metric, r.kind, y, H, offset, base_var, date_sd, r.tier))
         return out
 
     # ------------------------------------------------------------------- run
-    def run(self, obs_df, end=None, queries=None, smooth=True, max_iter=12, tol=1e-6) -> Result:
+    def run(self, obs_df, end=None, queries=None, smooth=True, max_iter=15, tol=1e-5,
+            segments=None) -> Result:
         """Filter (and smooth) all observations.
 
-        smooth=False: one forward pass. The dynamics are moment-matched around the
-            filter's own estimate (assumed-density filter). This is the online filter.
-        smooth=True: iterated posterior linearization smoother. Each pass linearizes
-            the dynamics statistically around the previous pass's smoothed marginals,
-            then reruns the Kalman filter and RTS smoother. Without this, one large
-            surprise in a quarterly revenue figure leaves the daily path and the
-            accumulated revenue inconsistent.
+        smooth=False: one forward pass, moment-matched about the filter's own estimate.
+            This is the online filter, and its likelihood is used for parameter fitting.
+        smooth=True: iterated posterior linearization smoother (see module docstring).
+        segments: extra segments to carry even when no claim mentions them.
         """
-        periods = self._periods(obs_df, queries)
-        n = N_BASE + len(periods)
+        lay = self.layout(obs_df, queries, segments)
         last = [pd.Timestamp(end)] if end is not None else []
         if obs_df is not None and len(obs_df):
             last.append(pd.Timestamp(obs_df.t_eff.max()))
-        last += [p.end for p in periods]
+        last += [p.end for p in lay.periods]
         end = max(last)
         T = (end - self.start).days + 1
         dates = pd.date_range(self.start, periods=T, freq="D")
-        obs = self._compile(obs_df, periods, n) if obs_df is not None else []
+        obs = self._compile(obs_df, lay) if obs_df is not None and len(obs_df) else []
         by_t = {}
         for o in obs:
             by_t.setdefault(o.t, []).append(o)
-        ctx = self._context(periods, n)
+        ctx = self._context(lay, obs_df)
 
-        res = self._pass(ctx, T, dates, periods, by_t, None, smooth)
+        res = self._pass(ctx, T, dates, lay, by_t, None, smooth)
         if smooth:
             it = 1
             for it in range(2, max_iter + 2):
                 lin = (res.ms_prev, res.Ps_prev, res.ms, res.Ps)
-                new = self._pass(ctx, T, dates, periods, by_t, lin, smooth)
-                delta = float(np.max(np.abs(new.ms[:, :N_BASE] - res.ms[:, :N_BASE])))
+                new = self._pass(ctx, T, dates, lay, by_t, lin, smooth)
+                k = lay.n_core
+                delta = float(np.max(np.abs(new.ms[:, :k] - res.ms[:, :k])))
                 res = new
                 if delta < tol:
                     break
             res.iterations = it
         return res
 
-    def _context(self, periods, n):
-        p = self.p
+    def _context(self, lay: Layout, obs_df):
+        p, n = self.p, lay.n
         Q = np.zeros((n, n))
         Q[L, L], Q[G, G], Q[B, B] = p["sigma_l"] ** 2, p["sigma_g"] ** 2, p["sigma_b"] ** 2
         m0 = np.zeros(n)
         m0[L], m0[G], m0[B] = p["prior_l"], p["prior_g"], p["prior_b"]
         P0 = np.zeros((n, n))
         P0[L, L], P0[G, G], P0[B, B] = p["prior_l_sd"] ** 2, p["prior_g_sd"] ** 2, p["prior_b_sd"] ** 2
-        starts = np.array([(pp.start - self.start).days for pp in periods], dtype=int)
-        ends = np.array([(pp.end - self.start).days for pp in periods], dtype=int)
+        for s in lay.segments:
+            j, spec = lay.seg(s), p["segments"][s]
+            m0[j], P0[j, j], Q[j, j] = math.log(spec["prior_share"]), spec["prior_sd"] ** 2, spec["sigma"] ** 2
+        breaks = {}
+        for name in lay.indicators:
+            j, spec = lay.ind(name), p["indicators"][name]
+            # Diffuse intercept centred on the first reading, so the level is learned from data.
+            rows = obs_df[(obs_df.metric == "indicator") & (obs_df.indicator == name)]
+            first = math.log(float(rows.sort_values("t_eff").value.iloc[0])) if len(rows) else 0.0
+            m0[j] = first - float(spec.get("beta", 1.0)) * 3.0
+            P0[j, j] = float(spec.get("prior_sd", 5.0)) ** 2
+            Q[j, j] = float(spec.get("drift", 0.003)) ** 2
+            for d in spec.get("breaks", []) or []:
+                breaks.setdefault((pd.Timestamp(d) - self.start).days, []).append(j)
+        starts = np.array([(pp.start - self.start).days for pp in lay.periods], dtype=int)
+        ends = np.array([(pp.end - self.start).days for pp in lay.periods], dtype=int)
         c = np.zeros(n)
         c[L], c[G] = 1.0, 0.5 / config.DAYS_PER_MONTH   # u = log revenue rate at mid-day
-        # Damped trend: g' = g + kappa (g_bar - g) / 30.44, so growth reverts to g_bar
-        # with a half-life of ln2/kappa months.
         kappa = float(p.get("growth_reversion", 0.0))
         a_g = np.zeros(n)
         a_g[G] = kappa * float(p.get("growth_longrun", 0.0)) / config.DAYS_PER_MONTH
+        part = [lay.seg(s) for s in lay.segments if p["segments"][s]["partition"]]
         return {"Q": Q, "m0": m0, "P0": P0, "starts": starts, "ends": ends, "c": c, "n": n,
-                "kappa": kappa, "a_g": a_g}
+                "kappa": kappa, "a_g": a_g, "acc0": lay.acc0, "partition": part, "breaks": breaks}
 
     def _transition(self, ctx, t):
         """Linear part M and revenue loading d for the step into day t."""
@@ -282,14 +399,28 @@ class Model:
         d = np.zeros(n)
         k = len(ctx["starts"])
         if k:
-            idx = np.arange(k) + N_BASE
+            idx = np.arange(k) + ctx["acc0"]
             reset = ctx["starts"] == t
             active = (ctx["starts"] <= t) & (t <= ctx["ends"])
             M[idx[reset], idx[reset]] = 0.0
             d[idx[active]] = 1.0 / config.DAYS_PER_YEAR
         return M, d
 
-    def _pass(self, ctx, T, dates, periods, by_t, lin, smooth):
+    def _constraint_obs(self, ctx, t, mh, Ph):
+        """Soft constraint sum_k exp(s_k) = 1 over the partition, linearized about (mh, Ph)."""
+        part = ctx["partition"]
+        E = np.array([math.exp(mh[j] + 0.5 * Ph[j, j]) for j in part])
+        H = np.zeros(ctx["n"])
+        H[part] = E
+        hbar = float(E.sum())
+        Pk = Ph[np.ix_(part, part)]
+        var_h = float(np.sum(np.outer(E, E) * np.expm1(Pk)))
+        omega = max(var_h - float(E @ Pk @ E), 0.0)
+        y = 1.0 - hbar + float(H @ mh)
+        return Obs("constraint", t, "constraint", "point", y, H, 0.0,
+                   config.CONSTRAINT_SD ** 2 + omega, 0.0, "gaap", constraint=True)
+
+    def _pass(self, ctx, T, dates, lay, by_t, lin, smooth):
         n, c, Q = ctx["n"], ctx["c"], ctx["Q"]
         m, P = ctx["m0"].copy(), ctx["P0"].copy()
         m_pred = np.zeros((T, n)); P_pred = np.zeros((T, n, n))
@@ -301,7 +432,6 @@ class Model:
             M, d = self._transition(ctx, t)
             # Statistical linear regression of f(x) = M x + d e^{c'x} about (mh, Ph):
             #   F = M + E d c',  a = d E (1 - c'mh),  Omega = d d' E^2 (e^v - 1 - v)
-            # About the filter's own (m, P), this is exact moment matching.
             if lin is None:
                 mh, Ph = m, P
             elif t == 0:
@@ -315,17 +445,24 @@ class Model:
             omega = E * E * (math.expm1(v) - v)
             m = F @ m + a
             P = F @ P @ F.T + np.outer(d, d) * omega + Q
+            for j in ctx["breaks"].get(t, ()):
+                P[j, j] += BREAK_SD ** 2          # source changed how it counts
             P = 0.5 * (P + P.T)
             if smooth:
                 Fs[t] = F
             m_pred[t], P_pred[t] = m, P
-            for o in by_t.get(t, []):
+            obs_t = list(by_t.get(t, []))
+            if len(ctx["partition"]) >= 2 and t % 7 == 0:
+                cm, cP = (m, P) if lin is None else (lin[2][t], lin[3][t])
+                obs_t.append(self._constraint_obs(ctx, t, cm, cP))
+            for o in obs_t:
                 m, P, inn = self._update(m, P, o, dates[t])
-                loglik += inn.loglik
-                innovations.append(inn)
+                if not o.constraint:
+                    loglik += inn.loglik
+                    innovations.append(inn)
             m_f[t], P_f[t] = m, P
 
-        res = Result(self.start, dates, periods, m_pred, P_pred, m_f, P_f, None, None, loglik, innovations)
+        res = Result(self.start, dates, lay, m_pred, P_pred, m_f, P_f, None, None, loglik, innovations)
         if not smooth:
             return res
         ms, Ps = m_f.copy(), P_f.copy()
@@ -335,7 +472,6 @@ class Model:
             ms[t] = m_f[t] + Gt @ (ms[t + 1] - m_pred[t + 1])
             Ps_t = P_f[t] + Gt @ (Ps[t + 1] - Pp) @ Gt.T
             Ps[t] = 0.5 * (Ps_t + Ps_t.T)
-        # smoothed prior (state before day 0), used to linearize the first step
         Pp = P_pred[0]
         G0 = ctx["P0"] @ Fs[0].T @ np.linalg.pinv(Pp, rcond=1e-10, hermitian=True)
         res.ms_prev = ctx["m0"] + G0 @ (ms[0] - m_pred[0])
@@ -381,17 +517,17 @@ class Model:
         return m, P, inn
 
 
-def observation_predictive(res: Result, row, tiers) -> tuple[float, float]:
-    """Predictive mean and sd of a claim (log for run-rate, $B for revenue), from smoothed state."""
-    D = config.DAYS_PER_MONTH
-    tier = tiers[row.tier]
-    if row.metric == "run_rate":
-        m, P = res.state(row.t_eff)
-        h = np.zeros(len(m)); h[L] = 1; h[B] = 1
-        mu = float(h @ m) + tier.get("bias", 0.0)
-        var = float(h @ P @ h) + tier["log_sd"] ** 2 + (m[G] / D * row.date_sd_days) ** 2
-        return mu, math.sqrt(var)
-    key = period_key(row.period_start, row.period_end)
-    r = res.period_revenue(key)
-    var = r["sd"] ** 2 + (tier["log_sd"] * row.value) ** 2
-    return r["mean"], math.sqrt(var)
+def observation_predictive(res: Result, row, model: Model) -> tuple[float, float]:
+    """Predictive mean and sd of a claim from the smoothed state.
+
+    The result is in log units for run-rate, share and indicator claims, and in $B for revenue.
+    """
+    if row.metric == "revenue":
+        r = res.period_revenue(period_key(row.period_start, row.period_end))
+        _, _, _, base_var, _ = model.obs_vector(row, res.layout)
+        return r["mean"], math.sqrt(r["sd"] ** 2 + base_var)
+    H, _, offset, base_var, date_sd = model.obs_vector(row, res.layout)
+    m, P = res.state(row.t_eff)
+    mu = float(H @ m) + offset
+    var = float(H @ P @ H) + base_var + (m[G] / config.DAYS_PER_MONTH * date_sd) ** 2
+    return mu, math.sqrt(var)

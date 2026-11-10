@@ -18,9 +18,10 @@ def _obs_df(rows):
     df = pd.DataFrame(rows)
     for c in ("ref_date", "period_start", "period_end", "published"):
         df[c] = pd.to_datetime(df.get(c))
-    for c, v in {"definition": "instant", "date_sd_days": 0.0, "include": 1,
-                 "source": "", "url": "", "notes": ""}.items():
+    for c, v in {"definition": "instant", "date_sd_days": 0.0, "include": 1, "source": "", "url": "",
+                 "notes": "", "segment": "total", "indicator": "", "is_forecast": 0}.items():
         df[c] = df[c].fillna(v) if c in df else v
+    df["is_forecast"] = df["is_forecast"].astype(int)
     df["origin_id"] = df["origin_id"].fillna(df.obs_id) if "origin_id" in df else df.obs_id
     return df
 
@@ -137,3 +138,92 @@ def test_real_data_backtest_runs_and_is_roughly_calibrated():
     assert s["n"] >= 10
     assert 0.5 <= s["coverage80"] <= 1.0
     assert s["mae_log_model_same_targets"] < s["mae_log_naive_same_targets"]
+
+
+# ----------------------------------------------------------------- segment / indicator layers
+def _indicator_df(days, l_true, start_obs="2025-01-05", step=None, beta=1.0, drift_sd=0.0, seed=5, name="ind_x"):
+    rng = np.random.default_rng(seed)
+    rows, a = [], 2.0
+    for d in pd.date_range(start_obs, days[-1], freq="7D"):
+        t = (d - days[0]).days
+        a += rng.normal(0, drift_sd)
+        v = math.exp(a + beta * l_true[t] + rng.normal(0, 0.02))
+        if step is not None and d >= pd.Timestamp(step):
+            v *= 0.65
+        rows.append({"obs_id": f"{name}@{d:%Y-%m-%d}", "metric": "indicator", "kind": "point", "value": v,
+                     "ref_date": d, "published": d + pd.Timedelta(days=1), "tier": "altdata", "indicator": name})
+    return _obs_df(rows)
+
+
+def _spec(**kw):
+    s = {"segment": "total", "beta": 1.0, "obs_sd": 0.02, "drift": 0.002, "prior_sd": 5.0, "breaks": []}
+    s.update(kw)
+    return s
+
+
+def test_partition_shares_sum_to_one():
+    days, l_true, _, df = _simulate()
+    share = _obs_df([{"obs_id": "sub", "metric": "share", "kind": "point", "value": 0.2, "ref_date": "2026-05-01",
+                      "published": "2026-10-26", "tier": "gaap", "segment": "subscription"}])
+    sel = data.select(pd.concat([df, share], ignore_index=True))
+    res = Model({"sigma_l": 0.004, "sigma_g": 0.016}).run(sel, end=days[-1])
+    for d in ["2025-06-01", "2026-05-01", "2026-11-01"]:
+        tot = res.share(d, "api")["mean"] + res.share(d, "subscription")["mean"]
+        assert tot == pytest.approx(1.0, abs=0.03)
+    assert res.share("2026-05-01", "subscription")["median"] == pytest.approx(0.2, rel=0.1)
+
+
+def test_indicator_tracks_growth_between_anchors():
+    """Hide Q3 from the model: an indicator proportional to revenue should recover the Q3 path."""
+    days, l_true, _, df = _simulate()
+    no_q3 = df[df.obs_id != "rev2026Q3"]
+    no_q3 = no_q3[~((no_q3.metric == "run_rate") & (pd.to_datetime(no_q3.ref_date) > "2026-06-30"))]
+    ind = _indicator_df(days, l_true, drift_sd=0.005)
+    p = {"sigma_l": 0.004, "sigma_g": 0.016, "indicators": {"ind_x": _spec(drift=0.003)}}
+    t = (pd.Timestamp("2026-09-30") - days[0]).days
+    with_ind = Model(p).run(data.select(pd.concat([no_q3, ind], ignore_index=True)), end=days[-1])
+    without = Model(p).run(data.select(no_q3), end=days[-1])
+    err_with = abs(with_ind.ms[t, L] - l_true[t])
+    err_without = abs(without.ms[t, L] - l_true[t])
+    assert err_with < err_without
+    assert err_with < 0.05
+
+
+def test_break_absorbs_a_counting_change():
+    """A 35% step in the indicator on a known break date must not show up as a revenue drop."""
+    days, l_true, _, df = _simulate()
+    base = df[pd.to_datetime(df.published) <= "2026-07-01"]           # anchors end mid-2026
+    ind = _indicator_df(days, l_true, step="2026-08-25")
+    t = (pd.Timestamp("2026-10-15") - days[0]).days
+    errs = {}
+    for label, breaks in (("with", ["2026-08-25"]), ("without", [])):
+        p = {"sigma_l": 0.004, "sigma_g": 0.016, "indicators": {"ind_x": _spec(breaks=breaks)}}
+        res = Model(p).run(data.select(pd.concat([base, ind], ignore_index=True)), end=days[-1])
+        errs[label] = res.ms[t, L] - l_true[t]
+    assert abs(errs["with"]) < 0.06
+    assert errs["without"] < -0.2          # read as a large revenue fall
+
+
+def test_weekly_aggregation_and_publication_dates():
+    from runrate_nowcast import altdata
+    raw = pd.DataFrame({"date": pd.date_range("2026-01-05", "2026-01-25", freq="D"), "indicator": "x",
+                        "value": 100.0, "published": pd.NaT, "source": "", "note": ""})
+    cat = pd.DataFrame([{"indicator": "x", "segment": "api", "role": "model", "beta": 1, "beta_sd": 0.2, "obs_sd": 0.05,
+                         "drift": 0.003, "prior_sd": 5, "lag_days": 0, "aggregate": "weekly_mean",
+                         "publish_delay_days": 1, "frequency": "daily", "access": "", "fetcher": "npm:x",
+                         "source_url": "", "description": "", "breaks": ""}])
+    obs = altdata.indicator_observations(cat=cat, raw=raw)
+    assert len(obs) == 3                                     # three full Mon-Sun weeks
+    assert obs.ref_date.iloc[0] == pd.Timestamp("2026-01-08")   # week centre (Thursday)
+    assert obs.published.iloc[0] == pd.Timestamp("2026-01-12")  # Sunday + 1 day
+
+
+def test_forecast_claims_excluded_unless_requested():
+    df = _obs_df([
+        {"obs_id": "f", "metric": "run_rate", "kind": "point", "value": 100, "ref_date": "2026-12-31",
+         "published": "2026-08-01", "tier": "leak_tier1", "is_forecast": 1},
+        {"obs_id": "o", "metric": "run_rate", "kind": "point", "value": 50, "ref_date": "2026-06-01",
+         "published": "2026-06-02", "tier": "official"},
+    ])
+    assert data.select(df).obs_id.tolist() == ["o"]
+    assert set(data.select(df, forecasts=True).obs_id) == {"o", "f"}

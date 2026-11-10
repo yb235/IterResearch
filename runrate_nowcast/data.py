@@ -12,7 +12,8 @@ REQUIRED = [
     "period_end", "definition", "date_sd_days", "published", "tier", "source", "url",
     "include", "notes",
 ]
-METRICS = {"run_rate", "revenue"}
+OPTIONAL = {"segment": "total", "indicator": "", "is_forecast": 0}
+METRICS = {"run_rate", "revenue", "share", "indicator"}
 KINDS = {"point", "lower", "upper"}
 
 
@@ -26,7 +27,22 @@ def load(path: str = config.DATA_PATH) -> pd.DataFrame:
     df["date_sd_days"] = df["date_sd_days"].fillna(0.0).astype(float)
     df["include"] = df["include"].fillna(1).astype(int)
     df["definition"] = df["definition"].fillna("")
+    for c, v in OPTIONAL.items():
+        df[c] = df[c].fillna(v) if c in df else v
+    df["is_forecast"] = df["is_forecast"].astype(int)
     _validate(df)
+    return df
+
+
+def load_all(path: str = config.DATA_PATH, indicators: bool = True) -> pd.DataFrame:
+    """Claims plus active leading-indicator observations (weekly), in one table."""
+    df = load(path)
+    if not indicators:
+        return df
+    from . import altdata
+    ind = altdata.indicator_observations()
+    if len(ind):
+        df = pd.concat([df, ind], ignore_index=True)
     return df
 
 
@@ -39,6 +55,9 @@ def _validate(df: pd.DataFrame) -> None:
     bad = df[~df.kind.isin(KINDS)]
     if len(bad):
         raise ValueError(f"unknown kind in {bad.obs_id.tolist()}")
+    bad = df[~df.segment.isin(list(config.SEGMENTS) + ["total"])]
+    if len(bad):
+        raise ValueError(f"unknown segment in {bad.obs_id.tolist()}")
     bad = df[~df.tier.isin(config.TIERS)]
     if len(bad):
         raise ValueError(f"unknown tier in {bad.obs_id.tolist()}")
@@ -58,11 +77,14 @@ def effective_date(row) -> pd.Timestamp:
     """Date of the instantaneous run-rate (or end of the revenue period) a row measures."""
     if row.metric == "revenue":
         return row.period_end
+    if row.metric in ("share", "indicator"):
+        return row.ref_date          # indicator rows arrive with their lag already applied
     lag = config.DEFINITION_LAG_DAYS[row.definition]
     return row.ref_date - pd.Timedelta(days=round(lag))
 
 
-def select(df: pd.DataFrame, vintage=None, exclude_ids=(), verbose=False) -> pd.DataFrame:
+def select(df: pd.DataFrame, vintage=None, exclude_ids=(), verbose=False,
+           forecasts: bool | None = None) -> pd.DataFrame:
     """Rows usable as evidence: include==1, published on/before `vintage`, one row per origin.
 
     Rows sharing an origin_id re-report the same underlying claim. Only the most
@@ -70,6 +92,9 @@ def select(df: pd.DataFrame, vintage=None, exclude_ids=(), verbose=False) -> pd.
     publication in the group, since that is when the information became public.
     """
     d = df[(df.include == 1) & (~df.obs_id.isin(list(exclude_ids)))].copy()
+    use_fc = config.USE_FORECASTS if forecasts is None else forecasts
+    if not use_fc and "is_forecast" in d:
+        d = d[d.is_forecast != 1]
     if vintage is not None:
         d = d[d.published <= pd.Timestamp(vintage)]
     d["rank"] = d.tier.map(lambda t: config.TIERS[t]["rank"])

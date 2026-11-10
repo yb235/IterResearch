@@ -33,7 +33,8 @@ def _naive(row, ev: pd.DataFrame) -> float | None:
     Revenue target: join the point run-rate claims log-linearly, hold flat outside
     them, and integrate over the period: sum of daily rate / 365, in $B.
     """
-    rr = ev[(ev.metric == "run_rate") & (ev.kind == "point")].sort_values("ref_date")
+    rr = ev[(ev.metric == "run_rate") & (ev.kind == "point") & (ev.segment == "total")
+            & (ev.is_forecast == 0)].sort_values("ref_date")
     if not len(rr):
         return None
     if row.metric == "run_rate":
@@ -47,7 +48,7 @@ def _naive(row, ev: pd.DataFrame) -> float | None:
 
 
 def prepublication_forecast(df: pd.DataFrame, row, params: dict | None = None, refit: bool = False,
-                            min_evidence: int = 3):
+                            min_evidence: int = 3, forecasts: bool | None = None):
     """Forecast one claim using only rows public the day before it, excluding its own origin.
 
     Returns (mu, sd, n_evidence, evidence_df). mu and sd are in log units for
@@ -55,9 +56,10 @@ def prepublication_forecast(df: pd.DataFrame, row, params: dict | None = None, r
     evidence.
     """
     vintage = pd.Timestamp(row.published) - pd.Timedelta(days=1)
-    ev = data.select(df, vintage=vintage)
+    ev = data.select(df, vintage=vintage, forecasts=forecasts)
     ev = ev[ev.origin_id != row.origin_id]
-    if len(ev) < min_evidence:
+    # Count claims only: indicator weeks alone are not enough evidence to score a target.
+    if (ev.metric != "indicator").sum() < min_evidence or pd.Timestamp(row.t_eff) < pd.Timestamp(config.MODEL_START):
         return None
     p = dict(params or {})
     if refit:
@@ -66,18 +68,28 @@ def prepublication_forecast(df: pd.DataFrame, row, params: dict | None = None, r
     model = Model(p)
     queries = [(row.period_start, row.period_end)] if row.metric == "revenue" else None
     end = max(pd.Timestamp(row.t_eff), vintage)
-    res = model.run(ev, end=end, queries=queries)
-    mu, sd = observation_predictive(res, row, model.p["tiers"])
+    seg = getattr(row, "segment", "total")
+    res = model.run(ev, end=end, queries=queries, segments=[seg] if seg != "total" else None)
+    mu, sd = observation_predictive(res, row, model)
     return mu, sd, len(ev), ev
 
 
 def run_backtest(df: pd.DataFrame, params: dict | None = None, refit: bool = False,
-                 min_evidence: int = 3) -> pd.DataFrame:
+                 min_evidence: int = 3, segment_targets: bool = False,
+                 forecasts: bool | None = None) -> pd.DataFrame:
+    """Targets: point claims from GAAP/official sources, excluding forecasts.
+
+    By default only total-company run-rate and revenue are targets, so variants with and
+    without the segment layer are scored on the same set.
+    """
     full = data.select(df)
-    targets = full[full.tier.isin(TARGET_TIERS) & (full.kind == "point")]
+    targets = full[full.tier.isin(TARGET_TIERS) & (full.kind == "point")
+                   & full.metric.isin(["run_rate", "revenue"]) & (full.is_forecast == 0)]
+    if not segment_targets:
+        targets = targets[targets.segment == "total"]
     rows = []
     for tg in targets.itertuples():
-        out = prepublication_forecast(df, tg, params, refit, min_evidence)
+        out = prepublication_forecast(df, tg, params, refit, min_evidence, forecasts)
         if out is None:
             continue
         mu, sd, n_ev, ev = out
@@ -118,3 +130,28 @@ def summarize(bt: pd.DataFrame) -> dict:
         "mae_log_naive_same_targets": float(np.mean(np.abs(ok.log_err_naive))) if len(ok) else float("nan"),
         "mae_log_model_same_targets": float(np.mean(np.abs(ok.log_err_model))) if len(ok) else float("nan"),
     }
+
+
+def layer_ablation(df_all: pd.DataFrame, params: dict | None = None) -> pd.DataFrame:
+    """Backtest the same targets while adding one layer at a time.
+
+    A  total-company claims only (run-rates, GAAP revenue)
+    B  + segment claims (shares, Claude Code run-rates)
+    C  + leading indicators            <- production default
+    D  + forecast claims (company targets, investor/third-party forecasts)
+    """
+    base = df_all[df_all.metric != "indicator"]
+    variants = [
+        ("A total-level claims", base[(base.segment == "total") & (base.metric != "share")], False),
+        ("B + segment claims", base, False),
+        ("C + leading indicators", df_all, False),
+        ("D + forecast claims", df_all, True),
+    ]
+    rows = []
+    for name, df, fc in variants:
+        bt = run_backtest(df, params, forecasts=fc)
+        s = summarize(bt)
+        rows.append({"variant": name, "n": s["n"], "coverage80": s["coverage80"], "coverage50": s["coverage50"],
+                     "mean_z": s["mean_z"], "sd_z": s["sd_z"], "mae_log": s["mae_log_model"],
+                     "mae_log_naive": s["mae_log_naive_same_targets"]})
+    return pd.DataFrame(rows)

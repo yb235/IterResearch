@@ -11,6 +11,8 @@ import os
 
 PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(PKG_DIR, "data", "observations.csv")
+INDICATORS_PATH = os.path.join(PKG_DIR, "data", "indicators.csv")
+CATALOG_PATH = os.path.join(PKG_DIR, "data", "indicator_catalog.csv")
 PARAMS_PATH = os.path.join(PKG_DIR, "params.json")
 REGISTRY_PATH = os.path.join(PKG_DIR, "forecasts", "registry.jsonl")
 OUTPUT_DIR = os.path.join(PKG_DIR, "reports")
@@ -31,7 +33,34 @@ TIERS = {
     "leak_single": {"rank": 3, "log_sd": 0.15,  "bias": 0.0},
     "third_party": {"rank": 4, "log_sd": 0.15,  "bias": 0.0},
     "secondary":   {"rank": 5, "log_sd": 0.30,  "bias": 0.0},
+    # Alternative-data series. Each indicator's noise comes from indicator_catalog.csv.
+    "altdata":     {"rank": 6, "log_sd": 0.10,  "bias": 0.0},
 }
+
+# Segment layer. Every segment is a log share of total revenue, as a random-walk state.
+#   partition=True: the segments sum to total revenue. A soft constraint
+#       sum(exp(share)) = 1 is applied once a week.
+#   partition=False: an overlay that cuts across the partition, such as a channel
+#       (cloud marketplaces) or a product (Claude Code).
+# The S-1 audits only consumption vs subscription (about 80/20 in H1 2026). The rest are
+# estimates.
+SEGMENTS = {
+    "api":          {"partition": True,  "prior_share": 0.80, "prior_sd": 0.30, "sigma": 0.005,
+                     "label": "Consumption (API, cloud, metered apps)"},
+    "subscription": {"partition": True,  "prior_share": 0.20, "prior_sd": 0.50, "sigma": 0.005,
+                     "label": "Subscriptions (Pro/Max/Team/Enterprise seats)"},
+    "cloud":        {"partition": False, "prior_share": 0.35, "prior_sd": 0.60, "sigma": 0.005,
+                     "label": "Billed via cloud marketplaces (overlay)"},
+    "claude_code":  {"partition": False, "prior_share": 0.08, "prior_sd": 1.00, "sigma": 0.02,
+                     "label": "Claude Code (product overlay)"},
+}
+CONSTRAINT_SD = 0.005          # soft sum-to-one constraint on the partition shares
+SHARE_APPROX_SD = 0.03         # a period-average share treated as a point-in-time share
+FORECAST_SD_PER_MONTH = 0.08   # extra log noise per month of horizon for forecast claims
+# Forecast claims (company targets, investor expectations, third-party forecasts) stay
+# out of the filter by default: in the layer backtest, adding them made accuracy slightly
+# worse. They are scored against the model instead (report: "Forecast claims").
+USE_FORECASTS = False
 
 # How far back each run-rate definition looks. A run-rate quoted on date d is mapped
 # to the instantaneous annualized revenue rate at d - lag.

@@ -23,16 +23,26 @@ from . import config, data
 from .model import Model
 
 
-def load_params(path: str = config.PARAMS_PATH) -> dict:
+def load_params(path: str = config.PARAMS_PATH, with_indicators: bool = True) -> dict:
+    """params.json, plus indicator specs from the catalog (fitted overrides win)."""
+    p = {}
     if os.path.exists(path):
         with open(path) as f:
-            return json.load(f)
-    return {}
+            p = json.load(f)
+    if with_indicators and os.path.exists(config.CATALOG_PATH):
+        from . import altdata
+        p["indicators"] = altdata.indicator_params(overrides=p.get("indicators"))
+    return p
 
 
 def save_params(params: dict, path: str = config.PARAMS_PATH) -> None:
+    keep = {k: v for k, v in params.items() if k != "indicators"}
+    fitted = {k: {kk: vv for kk, vv in v.items() if kk in ("beta", "drift", "obs_sd")}
+              for k, v in params.get("indicators", {}).items() if v.get("fitted")}
+    if fitted:
+        keep["indicators"] = fitted
     with open(path, "w") as f:
-        json.dump(params, f, indent=2, sort_keys=True)
+        json.dump(keep, f, indent=2, sort_keys=True)
         f.write("\n")
 
 
@@ -72,6 +82,44 @@ def fit_process_noise(df: pd.DataFrame, base: dict | None = None, prior_sd_log: 
     return out
 
 
+def fit_indicators(df: pd.DataFrame, params: dict, names=None, verbose=True) -> dict:
+    """MAP estimate of each model indicator's elasticity beta and intercept drift.
+
+    The objective is the same online-filter likelihood over all observations (claims and
+    indicators), with priors from the catalog: beta ~ N(beta_prior, beta_sd) and
+    log(drift) ~ N(log(drift_prior), 1). Indicators are fit one at a time, the others
+    held at their current values.
+    """
+    sel = data.select(df)
+    params = json.loads(json.dumps(params))
+    specs = params["indicators"]
+    names = names or [k for k, v in specs.items() if v.get("role") == "model"
+                      and k in set(sel.indicator)]
+    out = {}
+    for name in names:
+        prior = dict(specs[name])
+
+        def negpost(theta, name=name, prior=prior):
+            beta, logd, logs = theta
+            specs[name] = dict(prior, beta=float(beta), drift=float(math.exp(logd)), obs_sd=float(math.exp(logs)))
+            ll = Model(params).run(sel, smooth=False).loglik
+            lp = norm.logpdf(beta, prior["beta"], prior["beta_sd"]) + \
+                norm.logpdf(logd, math.log(prior["drift"]), 1.0) + \
+                norm.logpdf(logs, math.log(prior["obs_sd"]), 0.7)
+            return -(ll + lp)
+
+        x0 = [prior["beta"], math.log(prior["drift"]), math.log(prior["obs_sd"])]
+        opt = minimize(negpost, x0, method="Nelder-Mead", options={"xatol": 1e-3, "fatol": 1e-2, "maxiter": 200})
+        beta, drift, sd = float(opt.x[0]), float(math.exp(opt.x[1])), float(math.exp(opt.x[2]))
+        specs[name] = dict(prior, beta=beta, drift=drift, obs_sd=sd, fitted=True)
+        out[name] = {"beta": beta, "drift": drift, "obs_sd": sd, "prior_beta": prior["beta"],
+                     "prior_drift": prior["drift"], "prior_obs_sd": prior["obs_sd"], "neg_log_post": float(opt.fun)}
+        if verbose:
+            print(f"  {name}: beta {prior['beta']:.2f} -> {beta:.3f}, drift {prior['drift']:.4f} -> {drift:.4f}, "
+                  f"obs_sd {prior['obs_sd']:.3f} -> {sd:.3f}")
+    return out, params
+
+
 # --------------------------------------------------------------------------- sources
 def gaap_anchor(df: pd.DataFrame, params: dict | None = None):
     """Smoothed path using audited revenue only: the reference truth for scoring sources."""
@@ -86,7 +134,8 @@ def source_residuals(df: pd.DataFrame, params: dict | None = None) -> pd.DataFra
     sel = data.select(df)
     rows = []
     D = config.DAYS_PER_MONTH
-    for r in sel[sel.tier != "gaap"].itertuples():
+    claims = sel[(sel.tier != "gaap") & sel.metric.isin(["run_rate", "revenue"]) & (sel.segment == "total")]
+    for r in claims.itertuples():
         if r.metric == "run_rate":
             try:
                 m, P = res.state(r.t_eff)

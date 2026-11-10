@@ -95,3 +95,90 @@ def plot(res, sel, asof, path, start="2025-07-01", horizon_days=75):
     fig.savefig(path, facecolor=SURFACE)
     plt.close(fig)
     return path
+
+
+YELLOW = "#eda100"
+
+
+def plot_layers(res, sel, asof, path, start="2025-07-01"):
+    """Left: segment run-rates (official basis). Right: indicators vs model revenue, indexed."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+    from . import config as cfg
+
+    asof, start = pd.Timestamp(asof), pd.Timestamp(start)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.6), dpi=150)
+    fig.patch.set_facecolor(SURFACE)
+    colors = {"api": BLUE, "subscription": ORANGE, "cloud": AQUA, "claude_code": YELLOW}
+    days = pd.date_range(start, asof, freq="7D")
+
+    # ---- segments
+    for seg in res.layout.segments:
+        mu = np.array([res.log_runrate(d, "t28x13", segment=seg)[0] for d in days])
+        sd = np.array([res.log_runrate(d, "t28x13", segment=seg)[1] for d in days])
+        ax1.fill_between(days, np.exp(mu - Z80 * sd), np.exp(mu + Z80 * sd), color=colors[seg], alpha=0.12, lw=0)
+        ax1.plot(days, np.exp(mu), color=colors[seg], lw=2)
+        ax1.annotate(cfg.SEGMENTS[seg]["label"].split(" (")[0], (days[-1], math.exp(mu[-1])), textcoords="offset points",
+                     xytext=(5, 0), va="center", fontsize=8, color=INK)
+    cc = sel[(sel.metric == "run_rate") & (sel.segment == "claude_code")]
+    for r in cc.itertuples():
+        ax1.scatter([r.ref_date], [r.value], marker="^" if r.kind == "lower" else "o", s=36, zorder=5,
+                    facecolor=INK if r.tier == "official" else SURFACE, edgecolor=INK, linewidths=1.2)
+    ax1.set_yscale("log")
+    t1 = [0.5, 1, 2, 5, 10, 20, 50, 100]
+    ax1.set_yticks(t1); ax1.set_yticklabels([f"${t:g}B" for t in t1]); ax1.minorticks_off()
+    ax1.set_ylim(0.4, 130)
+    ax1.set_xlim(start, asof + pd.Timedelta(days=75))
+    ax1.set_title("Segment run-rates, official basis (80% bands)", loc="left", fontsize=11, color=INK)
+
+    # ---- indicators vs model revenue, indexed to 100 at base date
+    base = pd.Timestamp("2026-04-15")
+    weeks = pd.date_range(start, asof, freq="7D")
+    lrev = np.array([res.log_runrate(d, segment="api" if "api" in res.layout.segments else "total")[0] for d in weeks])
+    lb = res.log_runrate(base, segment="api" if "api" in res.layout.segments else "total")[0]
+    ax2.plot(weeks, 100 * np.exp(lrev - lb), color=INK, lw=2.4, label="Model: consumption revenue (GAAP basis)")
+    icol = {"npm_anthropic_sdk": BLUE, "pypi_anthropic": ORANGE, "ramp_token_spend_anthropic": AQUA}
+    specs = getattr(res, "indicator_specs", {}) or {}
+
+    def res_breaks(name):
+        return [pd.Timestamp(d) for d in specs.get(name, {}).get("breaks", [])]
+    for name in res.layout.indicators:
+        rows = sel[(sel.metric == "indicator") & (sel.indicator == name) & (sel.ref_date >= start)].sort_values("ref_date").copy()
+        if not len(rows):
+            continue
+        label = name
+        # Display only: chain-link across known breaks (the filter handles them via the intercept).
+        for bdate in res_breaks(name):
+            pre = rows[(rows.ref_date < bdate) & (rows.ref_date >= bdate - pd.Timedelta(days=14))]
+            post = rows[(rows.ref_date >= bdate) & (rows.ref_date < bdate + pd.Timedelta(days=14))]
+            if len(pre) and len(post):
+                rows.loc[rows.ref_date < bdate, "value"] *= post.value.mean() / pre.value.mean()
+                label = f"{name} (break-adjusted)"
+        # index each indicator to the model revenue at its first reading on/after the base date
+        ref = rows[rows.ref_date >= base].iloc[0] if (rows.ref_date >= base).any() else rows.iloc[0]
+        lref = res.log_runrate(ref.ref_date, segment="api" if "api" in res.layout.segments else "total")[0]
+        scale = 100 * math.exp(lref - lb) / ref.value
+        if len(rows) > 2:
+            ax2.plot(rows.ref_date, rows.value * scale, color=icol.get(name, INK2), lw=1.4, label=label)
+        else:
+            ax2.plot(rows.ref_date, rows.value * scale, color=icol.get(name, INK2), lw=1.4, marker="o", ms=6, label=label)
+    ax2.set_yscale("log")
+    t2 = [10, 20, 50, 100, 200, 400]
+    ax2.set_yticks(t2); ax2.set_yticklabels([str(t) for t in t2]); ax2.minorticks_off()
+    ax2.set_title(f"Leading indicators vs model revenue (index, {base:%b %Y} = 100)", loc="left", fontsize=11, color=INK)
+    ax2.legend(loc="upper left", fontsize=8, frameon=False, labelcolor=INK)
+
+    for ax in (ax1, ax2):
+        ax.set_facecolor(SURFACE)
+        ax.grid(axis="y", color=GRID, lw=0.8)
+        for s_ in ("top", "right", "left"):
+            ax.spines[s_].set_visible(False)
+        ax.spines["bottom"].set_color(INK2)
+        ax.tick_params(colors=INK2, labelsize=8.5, length=0)
+        ax.axvline(asof, color=INK2, lw=0.8, ls=":")
+    fig.tight_layout()
+    fig.savefig(path, facecolor=SURFACE)
+    plt.close(fig)
+    return path
