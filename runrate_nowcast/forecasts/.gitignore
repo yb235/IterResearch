@@ -1,0 +1,2 @@
+# The repo root ignores *.jsonl; the forecast registry must be committed.
+!registry.jsonl
