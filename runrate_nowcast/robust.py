@@ -12,12 +12,17 @@ well they predicted each observation before seeing it. Priors:
     beta ~ N(1, 0.25)   log(drift multiplier) ~ N(0, 1)   lag ~ uniform on the grid
 The nowcast is then the weighted mixture of the per-spec nowcasts.
 
+Two non-indicator choices the audit flagged are integrated the same way, with flat priors
+over their grids: the noise of third-party estimates (likelihood is flat), and the lag
+of Anthropic's run-rate definition (14 days by definition; 7 fits slightly better).
+
 Breaks are detected by a rule, not by eye: a counting change is a day when the
 Anthropic series and the same source's competitor series (openai) both step by more
 than 25% between the 7-day means before and after.
 """
 from __future__ import annotations
 
+import contextlib
 import copy
 import itertools
 import math
@@ -26,13 +31,15 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 
-from . import altdata, data, report
+from . import altdata, config, data, report
 from .model import Model
 
 SDK = ("npm_anthropic_sdk", "pypi_anthropic")
 LAGS = (-14, -7, 0, 7, 14)              # + = indicator reflects revenue `lag` days earlier
-BETAS = (0.7, 0.85, 1.0, 1.15, 1.3)
-DRIFT_MULTS = (0.35, 0.7, 1.0, 1.4, 2.0)
+BETAS = (0.85, 1.0, 1.15)
+DRIFT_MULTS = (0.5, 0.7, 1.0, 1.4)
+THIRD_PARTY_SD = (0.08, 0.15, 0.30)     # not identified by the data (flat likelihood)
+DEF_LAGS = (7, 14)                      # t28x13 lag: 14 from the definition, data mildly prefer 7-10
 
 
 def detect_breaks(raw: pd.DataFrame | None = None, pairs=(("pypi_anthropic", "pypi_openai"),
@@ -100,16 +107,36 @@ def _spec_params(params, beta, drift_mult, lag=0):
     return p
 
 
-def spec_grid(df, params, asof, lags=LAGS, betas=BETAS, drift_mults=DRIFT_MULTS, verbose=False) -> pd.DataFrame:
+@contextlib.contextmanager
+def definition_lag(days):
+    old = config.DEFINITION_LAG_DAYS["t28x13"]
+    config.DEFINITION_LAG_DAYS["t28x13"] = float(days)
+    try:
+        yield
+    finally:
+        config.DEFINITION_LAG_DAYS["t28x13"] = old
+
+
+def _full_params(params, beta, dm, lag, tp_sd):
+    p = _spec_params(params, beta, dm, lag)
+    p.setdefault("tiers", {}).setdefault("third_party", {})["log_sd"] = tp_sd
+    return p
+
+
+def spec_grid(df, params, asof, lags=LAGS, betas=BETAS, drift_mults=DRIFT_MULTS,
+              tp_sds=THIRD_PARTY_SD, def_lags=DEF_LAGS, verbose=False) -> pd.DataFrame:
     rows = []
-    for lag in lags:
-        sel = data.select(_shift_indicators(df, lag), vintage=asof)
-        for beta, dm in itertools.product(betas, drift_mults):
-            ll = Model(_spec_params(params, beta, dm, lag)).run(sel, smooth=False).loglik
-            lp = norm.logpdf(beta, 1.0, 0.25) + norm.logpdf(math.log(dm), 0.0, 1.0)
-            rows.append({"lag": lag, "beta": beta, "drift_mult": dm, "loglik": ll, "logprior": lp})
+    for dlag in def_lags:
+        with definition_lag(dlag):
+            for lag in lags:
+                sel = data.select(_shift_indicators(df, lag), vintage=asof)
+                for beta, dm, tp in itertools.product(betas, drift_mults, tp_sds):
+                    ll = Model(_full_params(params, beta, dm, lag, tp)).run(sel, smooth=False).loglik
+                    lp = norm.logpdf(beta, 1.0, 0.25) + norm.logpdf(math.log(dm), 0.0, 1.0)
+                    rows.append({"def_lag": dlag, "lag": lag, "beta": beta, "drift_mult": dm, "tp_sd": tp,
+                                 "loglik": ll, "logprior": lp})
         if verbose:
-            print(f"  lag {lag:+d}: best loglik {max(r['loglik'] for r in rows if r['lag'] == lag):.2f}")
+            print(f"  definition lag {dlag}: best loglik {max(r['loglik'] for r in rows if r['def_lag'] == dlag):.2f}")
     g = pd.DataFrame(rows)
     lw = g.loglik + g.logprior
     g["weight"] = np.exp(lw - lw.max())
@@ -124,13 +151,15 @@ def averaged_nowcast(df, params, asof, grid: pd.DataFrame, mass: float = 0.99, n
     keep["weight"] /= keep.weight.sum()
     comps = []
     for r in keep.itertuples():
-        p = _spec_params(params, r.beta, r.drift_mult, r.lag)
-        _, res, _ = report.run_nowcast(_shift_indicators(df, r.lag), p, asof)
-        c = {"lag": r.lag, "beta": r.beta, "drift_mult": r.drift_mult, "weight": r.weight}
-        for d in dates:
-            c[f"rr_{d}"] = res.log_runrate(d, "t28x13")
-        q = res.period_revenue(period)
-        c["rev"] = (q["mean"], q["sd"])
+        p = _full_params(params, r.beta, r.drift_mult, r.lag, r.tp_sd)
+        with definition_lag(r.def_lag):
+            _, res, _ = report.run_nowcast(_shift_indicators(df, r.lag), p, asof)
+            c = {"def_lag": r.def_lag, "lag": r.lag, "beta": r.beta, "drift_mult": r.drift_mult,
+                 "tp_sd": r.tp_sd, "weight": r.weight}
+            for d in dates:
+                c[f"rr_{d}"] = res.log_runrate(d, "t28x13")
+            q = res.period_revenue(period)
+            c["rev"] = (q["mean"], q["sd"])
         comps.append(c)
     rng = np.random.default_rng(seed)
     w = np.array([c["weight"] for c in comps])
@@ -151,5 +180,5 @@ def averaged_nowcast(df, params, asof, grid: pd.DataFrame, mass: float = 0.99, n
     return pd.DataFrame(comps), summary
 
 
-def lag_posterior(grid: pd.DataFrame) -> pd.Series:
-    return grid.groupby("lag").weight.sum().sort_index()
+def lag_posterior(grid: pd.DataFrame, col: str = "lag") -> pd.Series:
+    return grid.groupby(col).weight.sum().sort_index()

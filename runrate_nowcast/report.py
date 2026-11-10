@@ -118,10 +118,11 @@ def robust_headline(df, params, asof, z_sd_oos: float | None = None) -> list[str
     dates = (f"{month_end:%Y-%m-%d}", f"{asof:%Y-%m-%d}")
     comps, summ = robust.averaged_nowcast(df, params, asof, grid, dates=dates, period=period)
     lagp = robust.lag_posterior(grid)
-    out = ["## Headline (averaged over indicator specifications)\n",
-           "The nowcast depends on indicator choices the backtest cannot tell apart: lead/lag, elasticity "
-           "beta, intercept drift. These are integrated over a grid, each specification weighted by "
-           "prior × online-filter likelihood (robust.py), not picked by hand.\n",
+    out = ["## Headline (averaged over specifications)\n",
+           "The audit (reports/audit_*.md) found the nowcast sensitive to choices the data cannot pin down: "
+           "indicator lead/lag, elasticity and drift, third-party noise, and the run-rate definition lag. "
+           "Instead of picking one, they are integrated over a grid, each specification weighted by prior × "
+           "online-filter likelihood (robust.py).\n",
            "| Quantity | Spec-averaged (80%) | Calibrated to out-of-sample error |",
            "|---|---|---|"]
 
@@ -142,9 +143,14 @@ def robust_headline(df, params, asof, z_sd_oos: float | None = None) -> list[str
     out.append("")
     out.append("Posterior weight by indicator lag (days; + = indicator trails revenue): " +
                ", ".join(f"{int(k):+d}: {v:.0%}" for k, v in lagp.items()) + ".")
+    for col, label in (("beta", "elasticity beta"), ("drift_mult", "drift multiplier"),
+                       ("tp_sd", "third-party noise"), ("def_lag", "run-rate definition lag (days)")):
+        post = robust.lag_posterior(grid, col)
+        out.append(f"Posterior weight by {label}: " + ", ".join(f"{k:g}: {v:.0%}" for k, v in post.items()) + ".")
     top = comps.sort_values("weight", ascending=False).head(3)
     out.append("Top specifications: " + "; ".join(
-        f"lag {int(r.lag):+d}, beta {r.beta:.2f}, drift ×{r.drift_mult:g} ({r.weight:.0%})" for r in top.itertuples()) + ".")
+        f"lag {int(r.lag):+d}, beta {r.beta:.2f}, drift ×{r.drift_mult:g}, third-party sd {r.tp_sd:g}, "
+        f"definition lag {int(r.def_lag)} ({r.weight:.0%})" for r in top.itertuples()) + ".")
     if z_sd_oos:
         out.append(f"Calibrated column: the strict out-of-sample backtest had z sd = {z_sd_oos:.2f}, so model "
                    f"intervals are widened by that factor (n = 13 targets, so this factor is itself uncertain).")
