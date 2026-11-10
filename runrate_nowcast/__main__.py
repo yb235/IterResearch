@@ -47,6 +47,7 @@ def main(argv=None):
     p = sub.add_parser("ml"); p.add_argument("--asof", default=None)
     p = sub.add_parser("bayes"); p.add_argument("--asof", default=None)
     p.add_argument("--lags", action="store_true", help="also mix over indicator lag and definition lag by evidence")
+    p.add_argument("--register", action="store_true", help="append the summary to forecasts/registry.jsonl")
     sub.add_parser("bayes-backtest")
     a = ap.parse_args(argv)
 
@@ -150,6 +151,12 @@ def main(argv=None):
             md.append(f"| {k} | {c:.1f} | [{v['q10']:.1f}, {v['q90']:.1f}] |")
         md += ["", "## Structure weights (Laplace evidence)", "", weights.round(3).to_markdown(index=False), "",
                "## Parameter posterior (best structure)", "", post.round(4).to_markdown(index=False), ""]
+        q = asof.to_period("Q")
+        summ_reg = dict(summ, period=f"{q.start_time:%Y-%m-%d}..{q.end_time:%Y-%m-%d}")
+        if a.register:
+            e = registry.register_summary("bayes_laplace" + ("_lagmix" if a.lags else ""), asof, summ_reg,
+                                          note="posterior (MAP + Laplace) nowcast", data_path=a.data)
+            print(f"registered: {e['registered_at_utc']}")
         out = os.path.join(config.OUTPUT_DIR, f"bayes_{asof:%Y-%m-%d}.md")
         with open(out, "w") as f:
             f.write("\n".join(md))

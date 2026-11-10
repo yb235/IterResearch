@@ -76,6 +76,35 @@ def register(df, params, asof, note: str = "", path: str = config.REGISTRY_PATH,
     return entry
 
 
+def register_summary(model_name: str, asof, summary: dict, note: str = "", path: str = config.REGISTRY_PATH,
+                     data_path: str = config.DATA_PATH) -> dict:
+    """Register a model's quantile summary (e.g. the Bayesian posterior nowcast).
+
+    summary: {"runrate_<date>": {median, q10, q90}, "revenue_quarter": {mean, q10, q90}, "period": "<key>"}
+    """
+    asof = pd.Timestamp(asof)
+    pts = {}
+    for k, v in summary.items():
+        if k.startswith("runrate_"):
+            mu = math.log(v["median"])
+            sd = (math.log(v["q90"]) - math.log(v["q10"])) / (2 * 1.2816)
+            pts[k[len("runrate_"):]] = {"log_mu": round(mu, 5), "log_sd": round(sd, 5), **{q: round(v[q], 3) for q in ("median", "q10", "q90")}}
+    rev = {}
+    if "revenue_quarter" in summary and "period" in summary:
+        v = summary["revenue_quarter"]
+        rev[summary["period"]] = {"mean": round(v["mean"], 4), "sd": round((v["q90"] - v["q10"]) / (2 * 1.2816), 4),
+                                  "q10": round(v["q10"], 4), "q90": round(v["q90"], 4)}
+    entry = {"registered_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+             "asof": f"{asof:%Y-%m-%d}", "model": model_name, "note": note, "git_commit": _git_commit(),
+             "data_sha256": _sha256(data_path),
+             "indicators_sha256": _sha256(config.INDICATORS_PATH) if os.path.exists(config.INDICATORS_PATH) else None,
+             "revenue": rev, "runrate_points": pts}
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return entry
+
+
 def load_registry(path: str = config.REGISTRY_PATH) -> list[dict]:
     if not os.path.exists(path):
         return []
@@ -92,9 +121,18 @@ def score(df, params=None, path: str = config.REGISTRY_PATH) -> pd.DataFrame:
     for e in load_registry(path):
         reg_day = pd.Timestamp(e["registered_at_utc"][:10])
         later = sel[sel.published > reg_day]
-        fan = pd.DataFrame(e["runrate_fan"])
-        fan["date"] = pd.to_datetime(fan.date)
-        x = (fan.date - fan.date.min()).dt.days.to_numpy(float)
+        if e.get("runrate_fan"):
+            fan = pd.DataFrame(e["runrate_fan"])
+            fan["date"] = pd.to_datetime(fan.date)
+            x = (fan.date - fan.date.min()).dt.days.to_numpy(float)
+        else:                       # point-only entries (e.g. the Bayesian summary): +/- 3 days match
+            fan = pd.DataFrame([{"date": pd.Timestamp(d), "official_log_mu": v["log_mu"], "official_log_sd": v["log_sd"],
+                                 "instant_log_mu": float("nan"), "instant_log_sd": float("nan")}
+                                for d, v in e.get("runrate_points", {}).items()])
+            if not len(fan):
+                fan = pd.DataFrame({"date": [pd.Timestamp("1900-01-01")], "official_log_mu": [0.0], "official_log_sd": [1.0],
+                                    "instant_log_mu": [0.0], "instant_log_sd": [1.0]})
+            x = (fan.date - fan.date.min()).dt.days.to_numpy(float)
         for r in later.itertuples():
             if r.metric == "revenue":
                 key = period_key(r.period_start, r.period_end)
