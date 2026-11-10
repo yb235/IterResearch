@@ -63,8 +63,14 @@ def prepublication_forecast(df: pd.DataFrame, row, params: dict | None = None, r
         return None
     p = dict(params or {})
     if refit:
-        p.update({k: v for k, v in calibrate.fit_process_noise(df[df.published <= vintage], p).items()
+        # Strict real-time test: every estimated parameter is refit on data public before the vintage.
+        vint = df[df.published <= vintage]
+        p.update({k: v for k, v in calibrate.fit_process_noise(vint, p).items()
                   if k in ("sigma_l", "sigma_g", "sigma_b", "growth_reversion")})
+        if (vint.metric == "indicator").any() and p.get("indicators"):
+            from . import altdata
+            p["indicators"] = altdata.indicator_params()     # restart from catalog priors, not full-sample fits
+            _, p = calibrate.fit_indicators(vint, p, verbose=False)
     model = Model(p)
     queries = [(row.period_start, row.period_end)] if row.metric == "revenue" else None
     end = max(pd.Timestamp(row.t_eff), vintage)
@@ -76,7 +82,7 @@ def prepublication_forecast(df: pd.DataFrame, row, params: dict | None = None, r
 
 def run_backtest(df: pd.DataFrame, params: dict | None = None, refit: bool = False,
                  min_evidence: int = 3, segment_targets: bool = False,
-                 forecasts: bool | None = None) -> pd.DataFrame:
+                 forecasts: bool | None = None, target_ids=None) -> pd.DataFrame:
     """Targets: point claims from GAAP/official sources, excluding forecasts.
 
     By default only total-company run-rate and revenue are targets, so variants with and
@@ -87,6 +93,9 @@ def run_backtest(df: pd.DataFrame, params: dict | None = None, refit: bool = Fal
                    & full.metric.isin(["run_rate", "revenue"]) & (full.is_forecast == 0)]
     if not segment_targets:
         targets = targets[targets.segment == "total"]
+    if target_ids is not None:            # fixed target set, e.g. for sensitivity runs
+        targets = full[full.obs_id.isin(list(target_ids))].copy()
+        targets["kind"] = "point"
     rows = []
     for tg in targets.itertuples():
         out = prepublication_forecast(df, tg, params, refit, min_evidence, forecasts)
@@ -132,26 +141,44 @@ def summarize(bt: pd.DataFrame) -> dict:
     }
 
 
-def layer_ablation(df_all: pd.DataFrame, params: dict | None = None) -> pd.DataFrame:
-    """Backtest the same targets while adding one layer at a time.
+def layer_ablation(df_all: pd.DataFrame, params: dict | None = None, refit: bool = False,
+                   n_boot: int = 10000, seed: int = 0):
+    """Backtest the same targets while adding one layer at a time, with paired uncertainty.
 
     A  total-company claims only (run-rates, GAAP revenue)
     B  + segment claims (shares, Claude Code run-rates)
     C  + leading indicators            <- production default
     D  + forecast claims (company targets, investor/third-party forecasts)
+
+    Returns (summary table, paired comparisons). Each paired comparison bootstraps the
+    per-target difference in |log error| over the shared targets (90% interval) and
+    counts how many targets improved. With ~13 targets, read an interval that crosses
+    zero as "no evidence either way".
     """
+    import numpy as np
     base = df_all[df_all.metric != "indicator"]
     variants = [
-        ("A total-level claims", base[(base.segment == "total") & (base.metric != "share")], False),
-        ("B + segment claims", base, False),
-        ("C + leading indicators", df_all, False),
-        ("D + forecast claims", df_all, True),
+        ("A", "A total-level claims", base[(base.segment == "total") & (base.metric != "share")], False),
+        ("B", "B + segment claims", base, False),
+        ("C", "C + leading indicators", df_all, False),
+        ("D", "D + forecast claims", df_all, True),
     ]
-    rows = []
-    for name, df, fc in variants:
-        bt = run_backtest(df, params, forecasts=fc)
+    rows, errs = [], {}
+    for key, name, df, fc in variants:
+        bt = run_backtest(df, params, forecasts=fc, refit=refit)
         s = summarize(bt)
+        errs[key] = bt.set_index("target").log_err_model.abs()
         rows.append({"variant": name, "n": s["n"], "coverage80": s["coverage80"], "coverage50": s["coverage50"],
                      "mean_z": s["mean_z"], "sd_z": s["sd_z"], "mae_log": s["mae_log_model"],
                      "mae_log_naive": s["mae_log_naive_same_targets"]})
-    return pd.DataFrame(rows)
+    rng = np.random.default_rng(seed)
+    pairs = []
+    for a, b in (("A", "B"), ("A", "C"), ("B", "C"), ("C", "D")):
+        common = errs[a].index.intersection(errs[b].index)
+        d = (errs[b][common] - errs[a][common]).to_numpy()
+        boots = rng.choice(d, size=(n_boot, len(d)), replace=True).mean(axis=1)
+        lo, hi = np.percentile(boots, [5, 95])
+        pairs.append({"comparison": f"{b} vs {a}", "n": len(d), "mean_diff_abs_err": d.mean(),
+                      "ci90_lo": lo, "ci90_hi": hi, "targets_improved": int((d < 0).sum()),
+                      "targets_worse": int((d > 0).sum())})
+    return pd.DataFrame(rows), pd.DataFrame(pairs)

@@ -9,7 +9,8 @@ python -m runrate_nowcast register [--asof D] [--note T] # time-stamped forecast
 python -m runrate_nowcast score                          # score registered forecasts
 python -m runrate_nowcast update-data                    # fetch npm / PyPI / Ramp indicators
 python -m runrate_nowcast fit-indicators [--write]       # MAP beta / drift / noise per indicator
-python -m runrate_nowcast layers                         # backtest one layer at a time
+python -m runrate_nowcast layers [--refit]               # backtest one layer at a time
+python -m runrate_nowcast audit                          # sensitivity of conclusions to hand-set choices
 """
 from __future__ import annotations
 
@@ -36,7 +37,8 @@ def main(argv=None):
     sub.add_parser("score")
     p = sub.add_parser("update-data"); p.add_argument("--start", default="2025-01-01")
     p = sub.add_parser("fit-indicators"); p.add_argument("--write", action="store_true")
-    sub.add_parser("layers")
+    p = sub.add_parser("layers"); p.add_argument("--refit", action="store_true")
+    sub.add_parser("audit")
     a = ap.parse_args(argv)
 
     warnings.simplefilter("ignore")
@@ -109,7 +111,20 @@ def main(argv=None):
             print(f"-> {config.PARAMS_PATH}")
 
     elif a.cmd == "layers":
-        print(backtest.layer_ablation(df, params).round(3).to_string(index=False))
+        tab, paired = backtest.layer_ablation(df, params, refit=a.refit)
+        print(tab.round(3).to_string(index=False))
+        print()
+        print(paired.round(3).to_string(index=False))
+
+    elif a.cmd == "audit":
+        from . import audit
+        base, tab = audit.run_audit(df, params)
+        md = audit.markdown(base, tab, asof)
+        out = os.path.join(config.OUTPUT_DIR, f"audit_{asof:%Y-%m-%d}.md")
+        os.makedirs(config.OUTPUT_DIR, exist_ok=True)
+        with open(out, "w") as f:
+            f.write(md)
+        print(f"-> {out}")
 
     elif a.cmd == "score":
         sc = registry.score(df, params)

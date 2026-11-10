@@ -30,6 +30,7 @@ def load(path: str = config.DATA_PATH) -> pd.DataFrame:
     for c, v in OPTIONAL.items():
         df[c] = df[c].fillna(v) if c in df else v
     df["is_forecast"] = df["is_forecast"].astype(int)
+    apply_date_windows(df)
     _validate(df)
     return df
 
@@ -44,6 +45,22 @@ def load_all(path: str = config.DATA_PATH, indicators: bool = True) -> pd.DataFr
     if len(ind):
         df = pd.concat([df, ind], ignore_index=True)
     return df
+
+
+def apply_date_windows(df: pd.DataFrame) -> None:
+    """Where the source wording gives a window [date_lo, date_hi], derive the date from it.
+
+    ref_date = midpoint and date_sd_days = width / sqrt(12), the sd of a uniform
+    distribution over the window. This replaces hand-entered dates and uncertainties
+    with a rule that traces back to the wording (column date_rule).
+    """
+    if "date_lo" not in df or "date_hi" not in df:
+        return
+    lo, hi = pd.to_datetime(df["date_lo"]), pd.to_datetime(df["date_hi"])
+    m = lo.notna() & hi.notna()
+    width = (hi[m] - lo[m]).dt.days.astype(float)
+    df.loc[m, "ref_date"] = lo[m] + pd.to_timedelta((width / 2).round(), unit="D")
+    df.loc[m, "date_sd_days"] = width / 12 ** 0.5
 
 
 def _validate(df: pd.DataFrame) -> None:

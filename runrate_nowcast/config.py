@@ -55,7 +55,7 @@ SEGMENTS = {
                      "label": "Claude Code (product overlay)"},
 }
 CONSTRAINT_SD = 0.005          # soft sum-to-one constraint on the partition shares
-SHARE_APPROX_SD = 0.03         # a period-average share treated as a point-in-time share
+SHARE_APPROX_SD = 0.03         # superseded: now derived as sigma_segment * sqrt(period_days / 12)
 FORECAST_SD_PER_MONTH = 0.08   # extra log noise per month of horizon for forecast claims
 # Forecast claims (company targets, investor expectations, third-party forecasts) stay
 # out of the filter by default: in the layer backtest, adding them made accuracy slightly

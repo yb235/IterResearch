@@ -213,8 +213,13 @@ def lognormal_summary(mu, sd) -> dict:
 
 def _col(row, name, default):
     v = getattr(row, name, default)
-    if v is None or (isinstance(v, float) and math.isnan(v)) or v == "":
+    if v is None or (isinstance(v, str) and v == ""):
         return default
+    try:
+        if pd.isna(v):             # NaN, None, NaT
+            return default
+    except (TypeError, ValueError):
+        pass
     return v
 
 
@@ -291,7 +296,13 @@ class Model:
         elif row.metric == "share":
             H[lay.seg(seg)] = 1.0
             y, offset = math.log(row.value), 0.0
-            base_var, date_sd = tier["log_sd"] ** 2 + config.SHARE_APPROX_SD ** 2, 0.0
+            # A period share is entered at the revenue-weighted centre of the period. If the
+            # share follows a random walk with daily sd sigma, that substitution has sd
+            # sigma * sqrt(days / 12). The noise is derived, not chosen.
+            ps, pe = _col(row, "period_start", None), _col(row, "period_end", None)
+            days = (pd.Timestamp(pe) - pd.Timestamp(ps)).days + 1 if ps is not None and pe is not None else 0
+            approx = float(self.p["segments"][seg]["sigma"]) * math.sqrt(days / 12.0)
+            base_var, date_sd = tier["log_sd"] ** 2 + approx ** 2, 0.0
         elif row.metric == "indicator":
             spec = self.p["indicators"][row.indicator]
             beta = float(spec.get("beta", 1.0))
