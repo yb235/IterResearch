@@ -12,7 +12,7 @@ REQUIRED = [
     "period_end", "definition", "date_sd_days", "published", "tier", "source", "url",
     "include", "notes",
 ]
-OPTIONAL = {"segment": "total", "indicator": "", "is_forecast": 0}
+OPTIONAL = {"segment": "total", "indicator": "", "is_forecast": 0, "date_kind": ""}
 METRICS = {"run_rate", "revenue", "share", "indicator"}
 KINDS = {"point", "lower", "upper"}
 
@@ -30,7 +30,7 @@ def load(path: str = config.DATA_PATH) -> pd.DataFrame:
     for c, v in OPTIONAL.items():
         df[c] = df[c].fillna(v) if c in df else v
     df["is_forecast"] = df["is_forecast"].astype(int)
-    apply_date_windows(df)
+    apply_date_windows(df, _fitted_crossing_position())
     _validate(df)
     return df
 
@@ -47,20 +47,48 @@ def load_all(path: str = config.DATA_PATH, indicators: bool = True) -> pd.DataFr
     return df
 
 
-def apply_date_windows(df: pd.DataFrame) -> None:
+def _fitted_crossing_position():
+    """crossing_position from params.json if it has been fitted, else None (config default)."""
+    import json
+    import os
+    if os.path.exists(config.PARAMS_PATH):
+        with open(config.PARAMS_PATH) as f:
+            return json.load(f).get("crossing_position")
+    return None
+
+
+def apply_date_windows(df: pd.DataFrame, crossing_position: float | None = None) -> None:
     """Where the source wording gives a window [date_lo, date_hi], derive the date from it.
 
-    ref_date = midpoint and date_sd_days = width / sqrt(12), the sd of a uniform
-    distribution over the window. This replaces hand-entered dates and uncertainties
-    with a rule that traces back to the wording (column date_rule).
+    Most claims ("in August", "October read") are uniform over the window: midpoint,
+    sd = width / sqrt(12). Crossing claims (date_kind = crossing: "crossed / passed /
+    reached $X") instead put the crossing at a position rho in the window (0 = window
+    start, 1 = the announcement), with the sd of a Beta(2 rho, 2 (1 - rho)) position:
+    width * sqrt(rho (1 - rho) / 3). At rho = 0.5 this is exactly the uniform rule.
+    rho is estimated from the data (see robust.crossing_profile), not assumed.
     """
     if "date_lo" not in df or "date_hi" not in df:
         return
+    rho = config.CROSSING_POSITION if crossing_position is None else float(crossing_position)
     lo, hi = pd.to_datetime(df["date_lo"]), pd.to_datetime(df["date_hi"])
     m = lo.notna() & hi.notna()
-    width = (hi[m] - lo[m]).dt.days.astype(float)
-    df.loc[m, "ref_date"] = lo[m] + pd.to_timedelta((width / 2).round(), unit="D")
-    df.loc[m, "date_sd_days"] = width / 12 ** 0.5
+    width = (hi - lo).dt.days.astype(float)
+    cross = m & (df.get("date_kind", pd.Series("", index=df.index)).fillna("") == "crossing")
+    uni = m & ~cross
+    df.loc[uni, "ref_date"] = lo[uni] + pd.to_timedelta((width[uni] / 2).round(), unit="D")
+    df.loc[uni, "date_sd_days"] = width[uni] / 12 ** 0.5
+    df.loc[cross, "ref_date"] = lo[cross] + pd.to_timedelta((width[cross] * rho).round(), unit="D")
+    df.loc[cross, "date_sd_days"] = width[cross] * (rho * (1 - rho) / 3) ** 0.5
+
+
+def with_crossing_position(df: pd.DataFrame, rho: float) -> pd.DataFrame:
+    """Copy of a loaded table with crossing claims re-dated at position rho."""
+    d = df.copy()
+    claims = d.metric != "indicator"
+    sub = d[claims].copy()
+    apply_date_windows(sub, rho)
+    d.loc[claims, ["ref_date", "date_sd_days"]] = sub[["ref_date", "date_sd_days"]]
+    return d
 
 
 def _validate(df: pd.DataFrame) -> None:

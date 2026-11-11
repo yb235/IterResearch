@@ -61,6 +61,10 @@ FORECAST_SD_PER_MONTH = 0.08   # extra log noise per month of horizon for foreca
 # out of the filter by default: in the layer backtest, adding them made accuracy slightly
 # worse. They are scored against the model instead (report: "Forecast claims").
 USE_FORECASTS = False
+# Where a "crossed $X" milestone sits inside its wording window (0 = window start,
+# 1 = announcement). 0.5 is the neutral uniform rule; the fitted value is written to
+# params.json (crossing_position) by `python -m runrate_nowcast fit-crossing --write`.
+CROSSING_POSITION = 0.5
 
 # How far back each run-rate definition looks. A run-rate quoted on date d is mapped
 # to the instantaneous annualized revenue rate at d - lag.

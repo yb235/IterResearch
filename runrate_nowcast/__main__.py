@@ -15,6 +15,7 @@ python -m runrate_nowcast ml                             # ML on interpolated la
 python -m runrate_nowcast bayes [--lags]                 # posterior (MAP + Laplace) nowcast
 python -m runrate_nowcast bayes-backtest                 # strict backtest with posterior refit per vintage
 python -m runrate_nowcast plot-errors                    # charts: actual vs forecast over time, forecast evolution
+python -m runrate_nowcast fit-crossing [--write]         # where "crossed $X" milestones sit in their windows
 """
 from __future__ import annotations
 
@@ -49,8 +50,10 @@ def main(argv=None):
     p = sub.add_parser("bayes"); p.add_argument("--asof", default=None)
     p.add_argument("--lags", action="store_true", help="also mix over indicator lag and definition lag by evidence")
     p.add_argument("--register", action="store_true", help="append the summary to forecasts/registry.jsonl")
-    sub.add_parser("bayes-backtest")
+    p = sub.add_parser("bayes-backtest"); p.add_argument("--asof", default=None)
+    p.add_argument("--no-crossing-fit", action="store_true", help="keep the neutral crossing position (0.5)")
     p = sub.add_parser("plot-errors"); p.add_argument("--asof", default=None)
+    p = sub.add_parser("fit-crossing"); p.add_argument("--write", action="store_true")
     a = ap.parse_args(argv)
 
     warnings.simplefilter("ignore")
@@ -166,9 +169,21 @@ def main(argv=None):
 
     elif a.cmd == "bayes-backtest":
         from . import bayes
-        bt = bayes.bayes_backtest(df, params)
-        bt.to_csv(os.path.join(config.OUTPUT_DIR, f"bayes_backtest_{asof:%Y-%m-%d}.csv"), index=False)
+        bt = bayes.bayes_backtest(df, params, crossing=None if a.no_crossing_fit else "profile")
+        suffix = "_rho05" if a.no_crossing_fit else ""
+        bt.to_csv(os.path.join(config.OUTPUT_DIR, f"bayes_backtest{suffix}_{asof:%Y-%m-%d}.csv"), index=False)
         print(bayes.summarize(bt).round(3).to_string())
+
+    elif a.cmd == "fit-crossing":
+        from . import robust
+        g = robust.crossing_profile(df, params)
+        print(g.round(3).to_string(index=False))
+        rho = float((g.rho * g.weight).sum())
+        print(f"posterior mean crossing position: {rho:.3f}")
+        if a.write:
+            params["crossing_position"] = round(rho, 3)
+            calibrate.save_params(params)
+            print(f"-> {config.PARAMS_PATH}")
 
     elif a.cmd == "plot-errors":
         from . import plot_backtest

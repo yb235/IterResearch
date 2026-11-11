@@ -230,8 +230,21 @@ class Posterior:
         return pd.DataFrame(rows)
 
 
-def fit_posterior(df, params, vintage, exclude_origin=None, laplace=True, lag=0, def_lag=None, warm=None):
-    """Posterior from data public at `vintage` (optionally without one origin)."""
+def crossing_for_vintage(df, vintage, exclude_origin=None) -> float:
+    """Crossing position estimated from data public at the vintage, with default (unfitted) parameters."""
+    return robust.best_crossing_position(df, base_params({}), vintage, exclude_origin=exclude_origin)
+
+
+def fit_posterior(df, params, vintage, exclude_origin=None, laplace=True, lag=0, def_lag=None, warm=None,
+                  crossing=None):
+    """Posterior from data public at `vintage` (optionally without one origin).
+
+    crossing: None (keep the table's dates), a number (that crossing position), or
+    "profile" (estimated from data public at the vintage).
+    """
+    if crossing is not None:
+        rho = crossing_for_vintage(df, vintage, exclude_origin) if crossing == "profile" else float(crossing)
+        df = data.with_crossing_position(df, rho)
     sel = data.select(robust._shift_indicators(df, lag) if lag else df, vintage=vintage)
     if exclude_origin is not None:
         sel = sel[sel.origin_id != exclude_origin]
@@ -244,6 +257,7 @@ def fit_posterior(df, params, vintage, exclude_origin=None, laplace=True, lag=0,
         prev = dict(zip([e["name"] for e in warm.spec], warm.theta_hat))
         x0 = np.array([prev.get(e["name"], e["mu"]) for e in spec])
     post = Posterior(sel, p, spec).fit(x0=x0)
+    post.df = df
     if laplace:
         post.laplace()
     return post
@@ -278,7 +292,7 @@ def mixture_predictive(post: Posterior, row, end, k=24, queries=None, segments=N
 
 
 # --------------------------------------------------------------------------- strict backtest
-def bayes_backtest(df, params, k=24, verbose=True) -> pd.DataFrame:
+def bayes_backtest(df, params, k=24, verbose=True, crossing="profile") -> pd.DataFrame:
     """Strict real-time test: posterior refit at every target's vintage, from catalog priors."""
     full = data.select(df)
     targets = full[full.tier.isin(backtest.TARGET_TIERS) & (full.kind == "point") & full.metric.isin(["run_rate", "revenue"])
@@ -292,8 +306,10 @@ def bayes_backtest(df, params, k=24, verbose=True) -> pd.DataFrame:
         ev = ev[ev.origin_id != tg.origin_id]
         if (ev.metric != "indicator").sum() < 3 or pd.Timestamp(tg.t_eff) < pd.Timestamp(config.MODEL_START):
             continue
-        post = fit_posterior(df, params, vintage, exclude_origin=tg.origin_id, warm=prev)
+        post = fit_posterior(df, params, vintage, exclude_origin=tg.origin_id, warm=prev, crossing=crossing)
         prev = post
+        # the target itself may be a crossing claim: use its date under the vintage's crossing position
+        tg = post.df[post.df.obs_id == tg.obs_id].assign(t_eff=lambda x: x.apply(data.effective_date, axis=1)).iloc[0]
         queries = [(tg.period_start, tg.period_end)] if tg.metric == "revenue" else None
         end = max(pd.Timestamp(tg.t_eff), vintage)
         (m0, s0), (m1, s1) = mixture_predictive(post, tg, end, k=k, queries=queries)
@@ -302,8 +318,8 @@ def bayes_backtest(df, params, k=24, verbose=True) -> pd.DataFrame:
             err = (y - mu) if tg.metric == "run_rate" else math.log(y / mu)
             z = (y - mu) / sd
             rows.append({"target": tg.obs_id, "metric": tg.metric, "vintage": vintage.date(), "method": label,
-                         "n_params": len(post.spec), "log_err": err, "z": z, "in80": abs(z) < 1.2816,
-                         "in50": abs(z) < 0.6745})
+                         "n_params": len(post.spec), "actual": tg.value, "forecast_mu": mu, "forecast_sd": sd,
+                         "log_err": err, "z": z, "in80": abs(z) < 1.2816, "in50": abs(z) < 0.6745})
         if verbose:
             print(f"  {tg.obs_id}: map z={rows[-2]['z']:+.2f}  laplace z={rows[-1]['z']:+.2f}  ({len(post.spec)} params)", flush=True)
     return pd.DataFrame(rows)

@@ -48,7 +48,7 @@ def _naive(row, ev: pd.DataFrame) -> float | None:
 
 
 def prepublication_forecast(df: pd.DataFrame, row, params: dict | None = None, refit: bool = False,
-                            min_evidence: int = 3, forecasts: bool | None = None):
+                            min_evidence: int = 3, forecasts: bool | None = None, crossing: str | float | None = None):
     """Forecast one claim using only rows public the day before it, excluding its own origin.
 
     Returns (mu, sd, n_evidence, evidence_df). mu and sd are in log units for
@@ -56,6 +56,13 @@ def prepublication_forecast(df: pd.DataFrame, row, params: dict | None = None, r
     evidence.
     """
     vintage = pd.Timestamp(row.published) - pd.Timedelta(days=1)
+    if crossing is not None:
+        # "profile": estimate the crossing position from data public at the vintage only
+        from . import robust
+        rho = robust.best_crossing_position(df, Model(params).p if params else None, vintage,
+                                            exclude_origin=row.origin_id) if crossing == "profile" else float(crossing)
+        df = data.with_crossing_position(df, rho)
+        row = df[df.obs_id == row.obs_id].assign(t_eff=lambda x: x.apply(data.effective_date, axis=1)).iloc[0]
     ev = data.select(df, vintage=vintage, forecasts=forecasts)
     ev = ev[ev.origin_id != row.origin_id]
     # Count claims only: indicator weeks alone are not enough evidence to score a target.
@@ -82,7 +89,7 @@ def prepublication_forecast(df: pd.DataFrame, row, params: dict | None = None, r
 
 def run_backtest(df: pd.DataFrame, params: dict | None = None, refit: bool = False,
                  min_evidence: int = 3, segment_targets: bool = False,
-                 forecasts: bool | None = None, target_ids=None) -> pd.DataFrame:
+                 forecasts: bool | None = None, target_ids=None, crossing=None) -> pd.DataFrame:
     """Targets: point claims from GAAP/official sources, excluding forecasts.
 
     By default only total-company run-rate and revenue are targets, so variants with and
@@ -98,7 +105,7 @@ def run_backtest(df: pd.DataFrame, params: dict | None = None, refit: bool = Fal
         targets["kind"] = "point"
     rows = []
     for tg in targets.itertuples():
-        out = prepublication_forecast(df, tg, params, refit, min_evidence, forecasts)
+        out = prepublication_forecast(df, tg, params, refit, min_evidence, forecasts, crossing)
         if out is None:
             continue
         mu, sd, n_ev, ev = out

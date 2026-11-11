@@ -332,3 +332,21 @@ def test_laplace_posterior_is_proper():
     assert np.isfinite(post.log_evidence)
     draws = post.draws(8)
     assert len(draws) == 8 and np.allclose(draws[0], post.theta_hat)
+
+
+def test_crossing_position_moves_only_crossing_claims():
+    df = _obs_df([
+        {"obs_id": "x", "metric": "run_rate", "kind": "point", "value": 30, "ref_date": "2026-03-20",
+         "published": "2026-04-06", "tier": "official", "date_kind": "crossing"},
+        {"obs_id": "y", "metric": "run_rate", "kind": "point", "value": 14, "ref_date": "2026-02-09",
+         "published": "2026-02-12", "tier": "official", "date_kind": "period"},
+    ])
+    df["date_lo"] = pd.to_datetime(["2026-03-03", "2026-02-01"])
+    df["date_hi"] = pd.to_datetime(["2026-04-06", "2026-02-28"])
+    mid = data.with_crossing_position(df, 0.5).set_index("obs_id")
+    late = data.with_crossing_position(df, 0.9).set_index("obs_id")
+    assert mid.loc["x", "ref_date"] == pd.Timestamp("2026-03-20")
+    assert late.loc["x", "ref_date"] == pd.Timestamp("2026-04-03")             # 3/3 + round(0.9 * 34) = 31 days
+    assert late.loc["x", "date_sd_days"] < mid.loc["x", "date_sd_days"]
+    assert mid.loc["x", "date_sd_days"] == pytest.approx(34 / 12 ** 0.5, rel=0.03)   # ~ uniform at 0.5
+    assert late.loc["y", "ref_date"] == mid.loc["y", "ref_date"]               # non-crossing claims unchanged

@@ -182,3 +182,30 @@ def averaged_nowcast(df, params, asof, grid: pd.DataFrame, mass: float = 0.99, n
 
 def lag_posterior(grid: pd.DataFrame, col: str = "lag") -> pd.Series:
     return grid.groupby(col).weight.sum().sort_index()
+
+
+# --------------------------------------------------------------------------- crossing position
+RHOS = (0.3, 0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, 0.98)
+
+
+def crossing_profile(df, params, vintage=None, rhos=RHOS, exclude_origin=None) -> pd.DataFrame:
+    """Online-filter log-likelihood of all observations for each crossing position rho.
+
+    rho is where a "crossed $X" milestone sits in its wording window (0 = window start,
+    1 = announcement). Posterior weights use a flat prior over the grid.
+    """
+    rows = []
+    for rho in rhos:
+        sel = data.select(data.with_crossing_position(df, rho), vintage=vintage)
+        if exclude_origin is not None:
+            sel = sel[sel.origin_id != exclude_origin]
+        rows.append({"rho": rho, "loglik": Model(params).run(sel, smooth=False).loglik})
+    g = pd.DataFrame(rows)
+    w = np.exp(g.loglik - g.loglik.max())
+    g["weight"] = w / w.sum()
+    return g
+
+
+def best_crossing_position(df, params, vintage=None, exclude_origin=None, rhos=RHOS) -> float:
+    g = crossing_profile(df, params, vintage, rhos, exclude_origin)
+    return float((g.rho * g.weight).sum())       # posterior mean over the grid
