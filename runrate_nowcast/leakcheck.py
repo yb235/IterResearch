@@ -154,6 +154,7 @@ HINDSIGHT = [
     "Price adjustment with gamma = 1 has the lowest error after the fact, but at every vintage the likelihood then available puts about 70-90% of the weight on gamma = 0. Reporting gamma = 1 as the model would be a hindsight choice.",
     "GitHub commit counts were all measured on 2026-11-11. Counts for earlier weeks include commits that became public later (repositories opened later, late pushes), so the backfilled series is not what a forecaster would have seen at the time.",
     "OpenRouter weekly tokens were downloaded once (2026-11-11) for the last 53 weeks; each week is dated as public the day after it ends. OpenRouter shows weeks as they close and usage logs are not normally revised, but this was not verified against archived copies. The series shape (a Q3 dip) was seen before the backtest was run.",
+    "Ramp's monthly vendor-adoption history comes from the current page (fetched 2026-11-11), dated as public 20 days after each month; earlier vintages may have shown different (later revised) values. GitHub new-repository counts were measured on 2026-11-11 and include repositories made public later. For both, the Q3 plateau was seen before the backtest.",
     "Each of these makes the backtest look better than a true real-time forecast would have. Only targets that arrive after a forecast is registered (forecasts/registry.jsonl) are free of it.",
 ]
 

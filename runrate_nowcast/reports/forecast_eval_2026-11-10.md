@@ -9,8 +9,11 @@ log(actual / forecast); negative means the forecast was too high.
 
 | rule        | model                                                    |   n |   mae_log |   bias_log |   mae_log_filing_targets |   mae_log_official_claims |   cov80 |    sd_z |
 |:------------|:---------------------------------------------------------|----:|----------:|-----------:|-------------------------:|--------------------------:|--------:|--------:|
+| publication | G GitHub new-repo share                                  |  15 |     0.1   |     -0.019 |                    0.085 |                     0.124 |   0.867 |   0.656 |
+| publication | R Ramp adoption + OpenRouter tokens x price              |  15 |     0.113 |      0.009 |                    0.117 |                     0.106 |   0.867 |   0.765 |
 | publication | E OpenRouter tokens x price                              |  15 |     0.132 |     -0.001 |                    0.117 |                     0.155 |   0.8   |   1.049 |
 | publication | F core signals x price (selected by backtest)            |  15 |     0.134 |     -0.092 |                    0.167 |                     0.083 |   0.8   |   1.265 |
+| publication | R Ramp adoption                                          |  15 |     0.14  |      0.059 |                    0.075 |                     0.238 |   0.867 |   0.716 |
 | publication | E OpenRouter tokens                                      |  15 |     0.141 |     -0.018 |                    0.135 |                     0.151 |   0.8   |   1.316 |
 | publication | C price-adjusted (github, gamma 1)                       |  15 |     0.155 |     -0.087 |                    0.181 |                     0.117 |   0.667 |   1.532 |
 | publication | C price-adjusted (uninformed, gamma 1)                   |  15 |     0.165 |     -0.083 |                    0.174 |                     0.152 |   0.6   |   1.589 |
@@ -56,10 +59,13 @@ H2 2026 targets, % error (+ = forecast too high):
 | F all signals                                            |         33.9 |             65.6 |            157.1 |
 | F all signals x price                                    |         19.4 |             47.6 |            116.7 |
 | F core signals x price (selected by backtest)            |         24.8 |             52.9 |             77.1 |
+| G GitHub new-repo share                                  |         -1.4 |             33.8 |             35.3 |
 | ML all signals (interp)                                  |         26.4 |             63.5 |             33.1 |
 | ML all signals (smoother)                                |         34.6 |             61.1 |             79.1 |
 | ML ridge (interp)                                        |         40.8 |             63.6 |             81.5 |
 | ML ridge (smoother)                                      |         54.4 |             83.8 |            103.2 |
+| R Ramp adoption                                          |          0   |             23   |             16   |
+| R Ramp adoption + OpenRouter tokens x price              |        -14.5 |            -17.5 |             55.8 |
 
 Paired differences in |log error| (negative = second model better; 90% bootstrap interval):
 
@@ -82,6 +88,7 @@ Paired differences in |log error| (negative = second model better; 90% bootstrap
 | rule       | model                                                    |   n |   mae_log |   bias_log |   mae_log_filing_targets |   mae_log_official_claims |   cov80 |    sd_z |
 |:-----------|:---------------------------------------------------------|----:|----------:|-----------:|-------------------------:|--------------------------:|--------:|--------:|
 | period_end | F core signals x price (selected by backtest)            |  13 |     0.153 |     -0.141 |                    0.198 |                     0.099 |   0.846 |   0.902 |
+| period_end | G GitHub new-repo share                                  |  13 |     0.156 |      0.078 |                    0.171 |                     0.138 |   0.846 |   0.7   |
 | period_end | C price-adjusted (github, gamma 1)                       |  13 |     0.176 |     -0.145 |                    0.223 |                     0.121 |   0.615 |   1.211 |
 | period_end | C price-adjusted (uninformed, gamma 1)                   |  13 |     0.19  |     -0.146 |                    0.222 |                     0.153 |   0.615 |   1.323 |
 | period_end | E OpenRouter tokens                                      |  13 |     0.196 |     -0.062 |                    0.227 |                     0.159 |   0.615 |   1.65  |
@@ -96,8 +103,10 @@ Paired differences in |log error| (negative = second model better; 90% bootstrap
 | period_end | ML all signals (interp)                                  |  11 |     0.25  |     -0.077 |                    0.257 |                     0.243 | nan     | nan     |
 | period_end | ML ridge (smoother)                                      |  11 |     0.26  |     -0.204 |                    0.323 |                     0.184 | nan     | nan     |
 | period_end | Combination: weights from past accuracy (all signals)    |  13 |     0.305 |     -0.254 |                    0.333 |                     0.272 | nan     | nan     |
+| period_end | R Ramp adoption + OpenRouter tokens x price              |  13 |     0.321 |      0.215 |                    0.478 |                     0.138 |   0.692 |   2.396 |
 | period_end | Combination: equal weights (all signals)                 |  13 |     0.397 |     -0.354 |                    0.491 |                     0.287 | nan     | nan     |
 | period_end | D + GitHub commits, price-adjusted (uninformed, gamma 1) |  13 |     0.514 |     -0.501 |                    0.658 |                     0.347 |   0.615 |   1.002 |
+| period_end | R Ramp adoption                                          |  13 |     0.524 |      0.475 |                    0.752 |                     0.258 |   0.615 |   4.832 |
 | period_end | D + GitHub commits                                       |  13 |     0.564 |     -0.55  |                    0.749 |                     0.347 |   0.538 |   1.111 |
 | period_end | Ensemble F + ML (all signals)                            |  11 |     0.57  |     -0.517 |                    0.855 |                     0.229 | nan     | nan     |
 | period_end | F all signals x price                                    |  13 |     1.59  |     -1.59  |                    2.008 |                     1.102 |   0.538 |   2.347 |
@@ -126,10 +135,13 @@ H2 2026 targets, % error (+ = forecast too high):
 | F all signals                                            |         23.6 |             37.9 |            123.3 |
 | F all signals x price                                    |         12.6 |             18.1 |             75.5 |
 | F core signals x price (selected by backtest)            |         15.9 |             29.5 |             74.3 |
+| G GitHub new-repo share                                  |          1.2 |             13.2 |              0.5 |
 | ML all signals (interp)                                  |         26.4 |             63.5 |             33.1 |
 | ML all signals (smoother)                                |         34.6 |             57.2 |             71.1 |
 | ML ridge (interp)                                        |         40.8 |             63.6 |             81.5 |
 | ML ridge (smoother)                                      |         54.4 |             79.2 |             98   |
+| R Ramp adoption                                          |          1.3 |             12.4 |             -0.8 |
+| R Ramp adoption + OpenRouter tokens x price              |         -6.3 |             -2.2 |             52.9 |
 
 Paired differences in |log error| (negative = second model better; 90% bootstrap interval):
 

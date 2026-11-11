@@ -100,6 +100,41 @@ Claude Code 默认在 commit 里写 `Co-Authored-By: Claude <模型名> <noreply
 - OpenCode 在 OpenRouter 上只有一个第三方网关的小条目（约第 200 名），没有参考价值。
 - 它的 GitHub 仓库（不在这个会话的访问范围内）、opencode.ai、models.dev（OpenCode 团队维护的模型价格库，git 历史里有价格变化）都访问不了。
 
+## 2c. 更多另类数据（2026-11-11 晚）
+
+**这个环境能抓、已经存下来的：**
+
+| 数据 | 内容 | Q3 2026 有没有看到放缓 | 用法 |
+|---|---|---|---|
+| Ramp AI Index 页面里嵌的完整历史 | 每月付费使用各厂商的美国企业比例，2023-07 到 2026-09；另有按行业、公司规模、州的拆分，每人每月 AI 支出，AI 占支付额的比例 | **看到了**。Anthropic 2–4 月每月 +4 到 +7 个百分点，7–9 月每月只 +0.3 到 +1 | 指标 `ramp_adoption_anthropic`（每月，按月末后 20 天公开处理） |
+| Ramp 最新一周的 token 花费 | Anthropic 占企业 token 花费 60.5%（截至 10/23 的一周）；与上月同期比，花费 +8.9%，用量 +37.1% | 直接说明了每 token 单价一个月降了约 20% | 只有快照，需要每周保存 |
+| GitHub 每月新建的仓库数（提到 claude / openai / gemini） | 2025-01 到 2026-10 | **看到了**。Claude 的份额 4 月 72%，8 月 61%，10 月 70% | 指标 `github_repo_share_claude`（份额，不用总数） |
+| npm：`@ai-sdk/anthropic`、`@ai-sdk/openai`、`@ai-sdk/google`、`@langchain/*`、`@anthropic-ai/bedrock-sdk`、`@anthropic-ai/vertex-sdk`、`@google/genai` | 每日下载量，2025 年起 | 没看到。Q3 一路上涨，Vercel AI SDK 里 Anthropic 的份额 6 月 36%，9 月 37% | 已存入 `indicators.csv`，未用作指标 |
+| PyPI：`langchain-anthropic`、`langchain-openai` | 最近 180 天 | 没看到（9 月的下降是 PyPI 统计口径的断点） | 已存入 |
+| SEC 全文检索：每月提到 Anthropic / OpenAI / Claude Code 的文件数 | 2024-01 到 2026-10 | 每月只有十几到几十份，随财报季大幅波动，用不了 | `data/sec_filing_mentions.csv` |
+
+**这个环境访问不了的**（网络策略拦截，放行申请被拒）：
+- Wikipedia 浏览量（wikimedia.org）
+- Hacker News（hn.algolia.com）
+- Reddit
+- Stack Overflow
+- Tranco、Cloudflare Radar（网站流行度排名）
+- Polymarket、Kalshi、Manifold（预测市场：第三方对收入的实时预测）
+- GDELT（新闻量）
+- Greenhouse（招聘）
+- Vercel AI Gateway、Kilo Code、Cline、Helicone 的用量排行（和 OpenRouter 一样衡量实际用量）
+- Similarweb、Appfigures、Sensor Tower、Google Trends
+- web.archive.org（历史快照，可以补 OpenRouter 53 周以前和 Ramp 的历史版本）
+- artificialanalysis.ai
+- Homebrew、VS Code 插件市场
+- Hugging Face
+
+**只能从新闻里拿到的零散数字**（二手转述，见 [`data/disclosures.csv`](data/disclosures.csv) 和 README）：
+- **Similarweb：** claude.ai 月访问 1 月 2.03 亿，4 月 8.24 亿，5 月 9.53 亿，8 月 9.50 亿。5 月以后基本持平。
+- **Appfigures：** Claude 应用 5 月的应用内收入约 $9,200 万；下载量 4 月见顶（约 2,000 万），5 月 1,800 万。AppMagic：7 月下载 1,660 万，比 6 月少 3.5%，收入多 8.8%。
+- **Menlo Ventures 2026 报告（11/3）：** Anthropic 占企业 LLM API 花费的 55%，上一年是 40%。
+- **Ramp 首席经济学家：** Anthropic 的美元增长在 8–9 月停滞，主要原因是顶级模型降价，不是需求下降。
+
 ## 3. 单任务成本随时间的变化
 
 | 数据 | 内容 | 时间范围 | 状态 |

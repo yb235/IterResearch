@@ -79,18 +79,30 @@ Values are recorded with the date they were fetched or published. A snapshot fet
 
 | indicator                   | first_date   | last_date   | published_min   | published_max   |   rows |   published_before_date |
 |:----------------------------|:-------------|:------------|:----------------|:----------------|-------:|------------------------:|
+| github_repo_share_claude    | 2025-01-31   | 2026-10-31  | 2025-02-01      | 2026-11-01      |     22 |                       0 |
+| npm_aisdk_anthropic         | 2025-01-01   | 2026-11-10  | NaT             | NaT             |    679 |                       0 |
+| npm_aisdk_google            | 2025-01-01   | 2026-11-10  | NaT             | NaT             |    679 |                       0 |
+| npm_aisdk_openai            | 2025-01-01   | 2026-11-10  | NaT             | NaT             |    679 |                       0 |
 | npm_anthropic_sdk           | 2025-01-01   | 2026-11-09  | NaT             | NaT             |    678 |                       0 |
+| npm_bedrock_sdk             | 2025-01-01   | 2026-11-10  | NaT             | NaT             |    679 |                       0 |
 | npm_claude_agent_sdk        | 2025-01-01   | 2026-11-09  | NaT             | NaT             |    678 |                       0 |
 | npm_claude_code             | 2025-01-01   | 2026-11-09  | NaT             | NaT             |    678 |                       0 |
+| npm_google_genai            | 2025-01-01   | 2026-11-10  | NaT             | NaT             |    679 |                       0 |
+| npm_langchain_anthropic     | 2025-01-01   | 2026-11-10  | NaT             | NaT             |    679 |                       0 |
+| npm_langchain_openai        | 2025-01-01   | 2026-11-10  | NaT             | NaT             |    679 |                       0 |
 | npm_openai                  | 2025-01-01   | 2026-11-09  | NaT             | NaT             |    678 |                       0 |
 | npm_openai_codex            | 2025-01-01   | 2026-11-09  | NaT             | NaT             |    678 |                       0 |
 | npm_opencode                | 2025-01-01   | 2026-11-10  | NaT             | NaT             |    679 |                       0 |
+| npm_vertex_sdk              | 2025-01-01   | 2026-11-10  | NaT             | NaT             |    679 |                       0 |
 | openrouter_anthropic_tokens | 2025-11-16   | 2026-11-08  | 2025-11-17      | 2026-11-09      |     52 |                       0 |
 | openrouter_google_tokens    | 2025-11-16   | 2026-11-08  | 2025-11-17      | 2026-11-09      |     52 |                       0 |
 | openrouter_openai_tokens    | 2025-11-16   | 2026-11-08  | 2025-11-17      | 2026-11-09      |     52 |                       0 |
 | pypi_anthropic              | 2026-04-08   | 2026-11-09  | NaT             | NaT             |    216 |                       0 |
+| pypi_langchain_anthropic    | 2026-04-08   | 2026-11-10  | NaT             | NaT             |    217 |                       0 |
+| pypi_langchain_openai       | 2026-04-08   | 2026-11-10  | NaT             | NaT             |    217 |                       0 |
 | pypi_openai                 | 2026-04-08   | 2026-11-09  | NaT             | NaT             |    216 |                       0 |
-| ramp_adoption_anthropic     | 2026-08-31   | 2026-09-30  | 2026-11-10      | 2026-11-10      |      2 |                       0 |
+| ramp_adoption_anthropic     | 2023-07-31   | 2026-09-30  | 2023-08-20      | 2026-10-20      |     39 |                       0 |
+| ramp_adoption_openai        | 2023-07-31   | 2026-09-30  | 2023-08-20      | 2026-10-20      |     39 |                       0 |
 | ramp_token_spend_anthropic  | 2026-09-25   | 2026-10-23  | 2026-11-10      | 2026-11-10      |      2 |                       0 |
 
 ## 6. Choices made after seeing results (not testable on the same targets)
@@ -102,4 +114,5 @@ Values are recorded with the date they were fetched or published. A snapshot fet
 - Price adjustment with gamma = 1 has the lowest error after the fact, but at every vintage the likelihood then available puts about 70-90% of the weight on gamma = 0. Reporting gamma = 1 as the model would be a hindsight choice.
 - GitHub commit counts were all measured on 2026-11-11. Counts for earlier weeks include commits that became public later (repositories opened later, late pushes), so the backfilled series is not what a forecaster would have seen at the time.
 - OpenRouter weekly tokens were downloaded once (2026-11-11) for the last 53 weeks; each week is dated as public the day after it ends. OpenRouter shows weeks as they close and usage logs are not normally revised, but this was not verified against archived copies. The series shape (a Q3 dip) was seen before the backtest was run.
+- Ramp's monthly vendor-adoption history comes from the current page (fetched 2026-11-11), dated as public 20 days after each month; earlier vintages may have shown different (later revised) values. GitHub new-repository counts were measured on 2026-11-11 and include repositories made public later. For both, the Q3 plateau was seen before the backtest.
 - Each of these makes the backtest look better than a true real-time forecast would have. Only targets that arrive after a forecast is registered (forecasts/registry.jsonl) are free of it.

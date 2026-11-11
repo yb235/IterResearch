@@ -73,7 +73,9 @@ def collect(asof: str = "2026-11-10", reports_dir: str = config.OUTPUT_DIR) -> p
         for f in sorted(glob.glob(os.path.join(reports_dir, f"forecast_openrouter_*_{rule}_{asof}.csv"))):
             variant = re.match(r".*forecast_openrouter_(.+?)_" + rule + "_", f).group(1)
             label = {"or_only": "E OpenRouter tokens", "or_price": "E OpenRouter tokens x price",
-                     "b_plus_or": "E B + OpenRouter tokens", "opencode": "E OpenCode downloads"}.get(variant, f"E {variant}")
+                     "b_plus_or": "E B + OpenRouter tokens", "opencode": "E OpenCode downloads",
+                     "ramp_only": "R Ramp adoption", "ramp_or": "R Ramp adoption + OpenRouter tokens x price",
+                     "gh_share": "G GitHub new-repo share"}.get(variant, f"E {variant}")
             for r in pd.read_csv(f).itertuples():
                 rows.append({"rule": rule, "model": label, "target": r.target, "metric": r.metric, "vintage": r.vintage,
                              "actual": r.actual, "forecast": r.forecast, "log_err": r.log_err_model, "z": r.z})
