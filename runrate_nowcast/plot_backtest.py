@@ -18,19 +18,30 @@ VIOLET = "#6250d6"
 MODELS = [  # key, label, color, marker
     ("claims", "State-space, claims only", AQUA, "s"),
     ("indicators", "State-space + indicators", BLUE, "o"),
-    ("bayes", "Bayesian (posterior mixture)", ORANGE, "^"),
+    ("bayes", "Bayesian, crossing position fitted", ORANGE, "^"),
+    ("bayes_old", "Bayesian, crossing at window midpoint (previous)", ORANGE, "^"),
     ("ml", "ML ridge (no interval)", VIOLET, "D"),
 ]
+HOLLOW = {"ml", "bayes_old"}
 
 
 def _bayes_rows(path, actual):
     """Rebuild forecast and interval from the stored log error and z of the Bayesian backtest."""
+    if not os.path.exists(path):
+        return {}
     b = pd.read_csv(path)
     b = b[b.method == "laplace_mixture"]
     out = {}
     for r in b.itertuples():
         y = actual.get(r.target)
         if y is None:
+            continue
+        if "forecast_mu" in b.columns and pd.notna(r.forecast_mu):      # stored directly
+            mu, sd = r.forecast_mu, r.forecast_sd
+            if r.metric == "run_rate":
+                out[r.target] = (math.exp(mu), math.exp(mu - Z80 * sd), math.exp(mu + Z80 * sd))
+            else:
+                out[r.target] = (mu, mu - Z80 * sd, mu + Z80 * sd)
             continue
         if r.metric == "run_rate":
             mu = math.log(y) - r.log_err
@@ -48,6 +59,7 @@ def collect(reports_dir=config.OUTPUT_DIR, asof="2026-11-10") -> pd.DataFrame:
     obs = data.load().set_index("obs_id")
     actual = dict(zip(s.target, s.actual))
     bayes = _bayes_rows(os.path.join(reports_dir, f"bayes_backtest_{asof}.csv"), actual)
+    bayes_old = _bayes_rows(os.path.join(reports_dir, f"bayes_backtest_rho05_{asof}.csv"), actual)
     mlp = os.path.join(reports_dir, f"ml_vs_statespace_{asof}.csv")
     ml = pd.read_csv(mlp).set_index("target") if os.path.exists(mlp) else None
     rows = []
@@ -60,9 +72,10 @@ def collect(reports_dir=config.OUTPUT_DIR, asof="2026-11-10") -> pd.DataFrame:
         rows.append(dict(base, model="claims", forecast=r.forecast_claims_only, q10=r.q10_claims_only, q90=r.q90_claims_only))
         rows.append(dict(base, model="indicators", forecast=r.forecast_with_indicators,
                          q10=r.q10_with_indicators, q90=r.q90_with_indicators))
-        if r.target in bayes:
-            f, lo, hi = bayes[r.target]
-            rows.append(dict(base, model="bayes", forecast=f, q10=lo, q90=hi))
+        for key, src in (("bayes", bayes), ("bayes_old", bayes_old)):
+            if r.target in src:
+                f, lo, hi = src[r.target]
+                rows.append(dict(base, model=key, forecast=f, q10=lo, q90=hi))
         if ml is not None and r.target in ml.index:
             e = ml.loc[r.target, "ML_smoother_ridge"]
             f = math.exp(math.log(r.actual) - e) if r.metric == "run_rate" else r.actual / math.exp(e)
@@ -89,7 +102,7 @@ def plot_errors(d: pd.DataFrame, path: str):
 
     fig, axes = plt.subplots(3, 1, figsize=(12, 13), dpi=150, gridspec_kw={"height_ratios": [1.1, 1.1, 1]})
     fig.patch.set_facecolor(SURFACE)
-    offsets = {m[0]: (i - 1.5) * 5 for i, m in enumerate(MODELS)}     # days, to keep markers apart
+    offsets = {m[0]: (i - 2) * 4 for i, m in enumerate(MODELS)}       # days, to keep markers apart
 
     for ax, metric, title, unit in (
             (axes[0], "run_rate", "Official run-rate claims: actual vs forecast made the day before publication", "$B annualized"),
@@ -102,7 +115,7 @@ def plot_errors(d: pd.DataFrame, path: str):
             ok = ~np.isnan(yerr).any(axis=0)
             if ok.any():
                 ax.errorbar(x[ok], m.forecast[ok], yerr=yerr[:, ok], fmt="none", ecolor=color, elinewidth=1.4, alpha=0.75, capsize=0)
-            hollow = key == "ml"
+            hollow = key in HOLLOW
             ax.scatter(x, m.forecast, marker=marker, s=40, zorder=4, facecolor=SURFACE if hollow else color,
                        edgecolor=color, linewidths=1.4)
         act = sub.drop_duplicates("target")
@@ -127,7 +140,7 @@ def plot_errors(d: pd.DataFrame, path: str):
         x = m.date + pd.to_timedelta(offsets[key], unit="D")
         ax.vlines(x, 0, 100 * m.pct_err, color=color, lw=1, alpha=0.35)
         ax.scatter(x, 100 * m.pct_err, marker=marker, s=36, zorder=4,
-                   facecolor=SURFACE if key == "ml" else color, edgecolor=color, linewidths=1.3)
+                   facecolor=SURFACE if key in HOLLOW else color, edgecolor=color, linewidths=1.3)
     ax.axhline(0, color=INK, lw=1)
     ax.axhspan(-10, 10, color=GRID, alpha=0.45, lw=0, zorder=0)
     for tgt, dy in (("rr_2026_05", 14), ("rev_2026q3", 14), ("rr_2025_10", 10)):
@@ -143,10 +156,10 @@ def plot_errors(d: pd.DataFrame, path: str):
     ax.set_ylabel("forecast / actual − 1 (%)", color=INK2, fontsize=9)
     _style(ax)
 
-    handles = [Line2D([], [], marker=mk, ls="", color=c, markerfacecolor=SURFACE if k == "ml" else c, label=lb)
+    handles = [Line2D([], [], marker=mk, ls="", color=c, markerfacecolor=SURFACE if k in HOLLOW else c, label=lb)
                for k, lb, c, mk in MODELS]
     handles.append(Line2D([], [], marker="_", ls="", color=INK, markersize=16, markeredgewidth=2.4, label="Actual"))
-    fig.legend(handles=handles, loc="upper center", ncol=5, frameon=False, fontsize=9, labelcolor=INK,
+    fig.legend(handles=handles, loc="upper center", ncol=3, frameon=False, fontsize=9, labelcolor=INK,
                bbox_to_anchor=(0.5, 1.0))
     g = d.assign(a=d.pct_err.abs()).groupby("model").a
     mae, n = g.mean(), g.size()
@@ -155,7 +168,7 @@ def plot_errors(d: pd.DataFrame, path: str):
     fig.text(0.01, 0.018, txt + ".", fontsize=8, color=INK2)
     fig.text(0.01, 0.004, "Strict out-of-sample: each forecast uses only data public the day before the target was "
              "published; parameters are refit on that data (claims/indicators/Bayesian).", fontsize=8, color=INK2)
-    fig.tight_layout(rect=(0, 0.03, 1, 0.97))
+    fig.tight_layout(rect=(0, 0.03, 1, 0.95))
     fig.savefig(path, facecolor=SURFACE)
     plt.close(fig)
     return path
