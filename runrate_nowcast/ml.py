@@ -40,14 +40,24 @@ from .model import Model, L, B
 
 FEATURES = ["npm_anthropic_sdk", "npm_openai", "npm_claude_code", "npm_claude_agent_sdk",
             "npm_openai_codex", "pypi_anthropic", "pypi_openai"]
+# "all" feature set: everything collected in real time. Weekly-native series (one value per
+# week, dated at the week's end) are handled separately from daily ones. GitHub commit counts
+# are sampled one week in four and are left out (too sparse for weekly pairs).
+FEATURES_ALL = FEATURES + ["npm_opencode"]
+WEEKLY_NATIVE = ["openrouter_anthropic_tokens", "openrouter_openai_tokens"]
 MAX_H = 13
 
 
 # --------------------------------------------------------------------------- features
-def weekly_features(raw: pd.DataFrame, vintage) -> pd.DataFrame:
-    """Weekly log indicator levels public on/before `vintage`, holiday-cleaned and break-adjusted."""
+def weekly_features(raw: pd.DataFrame, vintage, feature_set: str = "base") -> pd.DataFrame:
+    """Weekly log indicator levels public on/before `vintage`, holiday-cleaned and break-adjusted.
+
+    feature_set "all" adds OpenCode downloads, OpenRouter weekly tokens (Anthropic, OpenAI and
+    Anthropic's share), and the log price per token (measured model mix, pricing.py).
+    """
     vintage = pd.Timestamp(vintage)
-    r = raw[(raw.indicator.isin(FEATURES)) & (raw.value > 0) & (raw.date + pd.Timedelta(days=1) <= vintage)].copy()
+    feats = FEATURES_ALL if feature_set == "all" else FEATURES
+    r = raw[(raw.indicator.isin(feats)) & (raw.value > 0) & (raw.date + pd.Timedelta(days=1) <= vintage)].copy()
     # break adjustment by the same rule as the filter, using only data public at the vintage
     try:
         br = robust.detect_breaks(r)
@@ -66,10 +76,24 @@ def weekly_features(raw: pd.DataFrame, vintage) -> pd.DataFrame:
         wk = pd.DataFrame({"v": s.mean(), "n": s.count()})
         wk = wk[(wk.n >= 5) & (wk.index + pd.Timedelta(days=1) <= vintage)]
         out[name] = np.log(wk.v)
+    if feature_set == "all":
+        w = raw[raw.indicator.isin(WEEKLY_NATIVE) & (raw.value > 0)].copy()
+        pub = pd.to_datetime(w.published).fillna(w.date + pd.Timedelta(days=1))
+        w = w[pub <= vintage]
+        for name, g in w.groupby("indicator"):
+            s_ = g.set_index("date").value.sort_index()
+            s_.index = s_.index.to_period("W-SUN").to_timestamp("W-SUN")       # the week's Sunday, as above
+            out[name] = np.log(s_[~s_.index.duplicated()])
     f = pd.DataFrame(out)
     f.index = f.index - pd.Timedelta(days=3)          # week centre (Thursday)
     if {"npm_anthropic_sdk", "npm_openai"} <= set(f):
         f["npm_share"] = f.npm_anthropic_sdk - f.npm_openai
+    if feature_set == "all":
+        if {"openrouter_anthropic_tokens", "openrouter_openai_tokens"} <= set(f):
+            f["openrouter_share"] = f.openrouter_anthropic_tokens - f.openrouter_openai_tokens
+        from . import pricing
+        if len(f):
+            f["log_price"] = np.log(pricing.price_index(list(f.index), "github").to_numpy())
     return f.sort_index()
 
 
@@ -149,9 +173,14 @@ class _Cols:
 
 
 def _fit(kind, X, y):
-    # a column must have data in the first CV training fold, or some folds would see it all-empty
-    first_fold = X.iloc[: max(len(X) // 5, 10)]
-    cols = [c for c in X.columns if first_fold[c].notna().sum() >= 10]
+    # gbm: a column must have data in the first CV training fold, or some folds would see it
+    # all-empty. ridge imputes a missing change as 0 ("no information"), so a column only needs
+    # enough data overall; this lets signals that start late (OpenRouter, Nov 2025) enter.
+    if kind == "ridge":
+        cols = [c for c in X.columns if X[c].notna().sum() >= 10]
+    else:
+        first_fold = X.iloc[: max(len(X) // 5, 10)]
+        cols = [c for c in X.columns if first_fold[c].notna().sum() >= 10]
     return _Cols(_fit_raw(kind, X[cols], y), cols)
 
 
@@ -176,13 +205,14 @@ def _fit_raw(kind, X, y):
 
 
 # --------------------------------------------------------------------------- prediction for one target
-def predict_target(df, raw, target, params, label_kind="interp", models=("trend", "ridge", "gbm"), vintage=None):
+def predict_target(df, raw, target, params, label_kind="interp", models=("trend", "ridge", "gbm"), vintage=None,
+                   feature_set: str = "base"):
     pub = pd.Timestamp(target.published) - pd.Timedelta(days=1)
     vintage = pub if vintage is None else min(pd.Timestamp(vintage), pub)
     anch = anchors(df, vintage, exclude_origin=target.origin_id)
     if len(anch) < 3:
         return None
-    feats = weekly_features(raw, vintage)
+    feats = weekly_features(raw, vintage, feature_set)
     weeks = feats.index
     last_anchor = anch.index.max()
     if label_kind == "interp":
@@ -233,7 +263,7 @@ def predict_target(df, raw, target, params, label_kind="interp", models=("trend"
 
 
 def run(df=None, raw=None, params=None, label_kinds=("interp", "smoother"), verbose=True,
-        vintage_rule: str = "publication") -> pd.DataFrame:
+        vintage_rule: str = "publication", feature_set: str = "base") -> pd.DataFrame:
     warnings.simplefilter("ignore")
     df = data.load_all() if df is None else df
     raw = altdata.load_raw() if raw is None else raw
@@ -247,7 +277,7 @@ def run(df=None, raw=None, params=None, label_kinds=("interp", "smoother"), verb
             continue
         vint = backtest.target_vintage(tg, vintage_rule)
         for lk in label_kinds:
-            out = predict_target(df, raw, tg, params, lk, vintage=vint)
+            out = predict_target(df, raw, tg, params, lk, vintage=vint, feature_set=feature_set)
             if out is None:
                 continue
             preds, n_anch, t0 = out

@@ -7,6 +7,8 @@ Inputs (written by the backtests, reports/):
   forecast_price_<scheme>_g<gamma>_<rule>_<asof>.csv   C: + price-adjusted indicators
   forecast_price_<scheme>_g<gamma>_github_<rule>_<asof>.csv   D: + GitHub commits (scheme none = no price adjustment)
   forecast_openrouter_<variant>_<rule>_<asof>.csv      E: OpenRouter weekly Anthropic tokens
+  forecast_all_<variant>_<rule>_<asof>.csv             F: every real-time signal at once
+  forecast_mlall_<rule>_<asof>.csv                     ML on every real-time signal
 rule: publication (day before release) or period_end (date the number refers to).
 Errors are log(actual / forecast): negative = forecast too high.
 """
@@ -75,7 +77,35 @@ def collect(asof: str = "2026-11-10", reports_dir: str = config.OUTPUT_DIR) -> p
             for r in pd.read_csv(f).itertuples():
                 rows.append({"rule": rule, "model": label, "target": r.target, "metric": r.metric, "vintage": r.vintage,
                              "actual": r.actual, "forecast": r.forecast, "log_err": r.log_err_model, "z": r.z})
+        for f in sorted(glob.glob(os.path.join(reports_dir, f"forecast_all_*_{rule}_{asof}.csv"))):
+            variant = re.match(r".*forecast_all_(.+?)_" + rule + "_", f).group(1)
+            label = {"all_price": "F all signals x price", "all_raw": "F all signals",
+                     "core_price": "F core signals x price (selected by backtest)"}.get(variant, f"F {variant}")
+            for r in pd.read_csv(f).itertuples():
+                rows.append({"rule": rule, "model": label, "target": r.target, "metric": r.metric, "vintage": r.vintage,
+                             "actual": r.actual, "forecast": r.forecast, "log_err": r.log_err_model, "z": r.z})
+        f = os.path.join(reports_dir, f"forecast_mlall_{rule}_{asof}.csv")
+        if os.path.exists(f):
+            m = pd.read_csv(f)
+            for r in m[m.model == "ridge"].itertuples():
+                act = float(obs.loc[r.target, "value"])
+                rows.append({"rule": rule, "model": f"ML all signals ({r.labels})", "target": r.target, "metric": r.metric,
+                             "vintage": r.vintage, "actual": act, "forecast": act / math.exp(r.log_err),
+                             "log_err": r.log_err, "z": np.nan})
     d = pd.DataFrame(rows)
+    # Ensemble, defined before its results were seen: equal-weight mean of log forecasts of the
+    # all-signal state-space model (x price) and the two all-signal ML ridge models.
+    parts = ["F all signals x price", "ML all signals (interp)", "ML all signals (smoother)"]
+    if len(d) and set(parts) <= set(d.model):
+        e = d[d.model.isin(parts)]
+        for (rule, t), h in e.groupby(["rule", "target"]):
+            if h.model.nunique() < len(parts):
+                continue
+            le = float(h.log_err.mean())            # mean log error = log(actual) - mean log forecast
+            act = float(h.actual.iloc[0])
+            rows_e = {"rule": rule, "model": "Ensemble F + ML (all signals)", "target": t, "metric": h.metric.iloc[0],
+                      "vintage": h.vintage.iloc[0], "actual": act, "forecast": act / math.exp(le), "log_err": le, "z": np.nan}
+            d = pd.concat([d, pd.DataFrame([rows_e])], ignore_index=True)
     if len(d):
         d["filing_target"] = d.target.map(lambda t: int(obs.loc[t, "filing"]) == 1)
         d["pct_err"] = 100 * (d.forecast / d.actual - 1)
@@ -128,7 +158,7 @@ def markdown(d: pd.DataFrame, asof: str = "2026-11-10") -> str:
         g = d[d.rule == rule]
         if not len(g):
             continue
-        out += [f"## Vintage: {rule}", "", summary(g).round(3).to_markdown(index=False), "",
+        out += [f"## Vintage: {rule}", "", summary(g, common=False).round(3).to_markdown(index=False), "",
                 "H2 2026 targets, % error (+ = forecast too high):", "",
                 g[g.target.isin(H2_TARGETS)].pivot_table(index="model", columns="target", values="pct_err").round(1).to_markdown(), ""]
         pairs = [paired(d, a, b, rule) for a, b in (("A claims only", "B + indicators"),
@@ -140,7 +170,47 @@ def markdown(d: pd.DataFrame, asof: str = "2026-11-10") -> str:
                                                     ("B + indicators", "E B + OpenRouter tokens"),
                                                     ("A claims only", "E OpenCode downloads"))]
         pairs = [p for p in pairs if p]
+        pairs += [p for p in (paired(d, "E OpenRouter tokens x price", "F all signals x price", rule),
+                              paired(d, "ML ridge (interp)", "ML all signals (interp)", rule),
+                              paired(d, "A claims only", "Combination: weights from past accuracy (all signals)", rule)) if p]
         if pairs:
             out += ["Paired differences in |log error| (negative = second model better; 90% bootstrap interval):", "",
                     pd.DataFrame(pairs).round(3).to_markdown(index=False), ""]
     return "\n".join(out) + "\n"
+
+
+# --------------------------------------------------------------------------- forecast combination
+COMBINE = ["A claims only", "B + indicators", "C price-adjusted (github, gamma 1)", "D + GitHub commits",
+           "E OpenRouter tokens", "E OpenRouter tokens x price", "E OpenCode downloads",
+           "ML all signals (interp)", "ML all signals (smoother)"]
+PRIOR_MSE = 0.1 ** 2          # shrinks weights toward equal while few past errors are known
+
+
+def combine_realtime(d: pd.DataFrame, members=COMBINE) -> pd.DataFrame:
+    """Two combinations of the single-signal forecasts, both defined before their results were seen.
+
+    equal      mean of log forecasts over the members that forecast the target
+    inv_mse    weights proportional to 1 / (PRIOR_MSE + mean squared log error on earlier targets),
+               using only targets whose actual value was public by this forecast's vintage
+               (Bates-Granger). With no earlier targets the weights are equal.
+    """
+    pub = data.load().set_index("obs_id").published
+    out = []
+    for rule, g in d[d.model.isin(members)].groupby("rule"):
+        for t, h in g.groupby("target"):
+            v = pd.Timestamp(h.vintage.iloc[0])
+            act = float(h.actual.iloc[0])
+            le = h.set_index("model").log_err
+            past = g[g.target.map(pub) <= v]
+            mse = past.groupby("model").log_err.apply(lambda s: float((s ** 2).sum())) / past.groupby("model").size()
+            npast = past.groupby("model").size()
+            known = {m: mse[m] for m in le.index if npast.get(m, 0)}
+            fill = float(np.mean(list(known.values()))) if known else 0.0       # no history: the average member
+            w = pd.Series({m: 1.0 / (PRIOR_MSE + known.get(m, fill)) for m in le.index})
+            for name, ww in (("Combination: equal weights (all signals)", pd.Series(1.0, index=le.index)),
+                             ("Combination: weights from past accuracy (all signals)", w)):
+                e = float((le * ww).sum() / ww.sum())
+                out.append({"rule": rule, "model": name, "target": t, "metric": h.metric.iloc[0], "vintage": h.vintage.iloc[0],
+                            "actual": act, "forecast": act / math.exp(e), "log_err": e, "z": np.nan,
+                            "filing_target": h.filing_target.iloc[0], "pct_err": 100 * (math.exp(-e) - 1)})
+    return pd.DataFrame(out)

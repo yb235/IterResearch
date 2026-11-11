@@ -217,6 +217,7 @@ def main(argv=None):
     elif a.cmd == "forecast-eval":
         from . import forecast_eval
         d = forecast_eval.collect(f"{asof:%Y-%m-%d}")
+        d = pd.concat([d, forecast_eval.combine_realtime(d)], ignore_index=True)
         d.to_csv(os.path.join(config.OUTPUT_DIR, f"forecast_eval_{asof:%Y-%m-%d}.csv"), index=False)
         md = forecast_eval.markdown(d, f"{asof:%Y-%m-%d}")
         out = os.path.join(config.OUTPUT_DIR, f"forecast_eval_{asof:%Y-%m-%d}.md")
