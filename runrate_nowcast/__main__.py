@@ -18,6 +18,7 @@ python -m runrate_nowcast plot-errors                    # charts: actual vs for
 python -m runrate_nowcast fit-crossing [--write]         # where "crossed $X" milestones sit in their windows
 python -m runrate_nowcast leakcheck [--sensitivity]       # can any forecast see what it should not?
 python -m runrate_nowcast forecast-eval                   # no-filing forecast backtests, one table
+python -m runrate_nowcast plot-signals                    # charts: real-time signals vs revenue; no-filing forecast errors
 """
 from __future__ import annotations
 
@@ -58,6 +59,7 @@ def main(argv=None):
     p = sub.add_parser("fit-crossing"); p.add_argument("--write", action="store_true")
     p = sub.add_parser("leakcheck"); p.add_argument("--asof", default=None); p.add_argument("--sensitivity", action="store_true")
     p = sub.add_parser("forecast-eval"); p.add_argument("--asof", default=None)
+    p = sub.add_parser("plot-signals"); p.add_argument("--asof", default=None)
     a = ap.parse_args(argv)
 
     warnings.simplefilter("ignore")
@@ -221,6 +223,11 @@ def main(argv=None):
         with open(out, "w") as f:
             f.write(md)
         print(md); print(f"-> {out}")
+
+    elif a.cmd == "plot-signals":
+        from . import plot_signals
+        for path in plot_signals.run(f"{asof:%Y-%m-%d}"):
+            print(f"-> {path}")
 
     elif a.cmd == "score":
         sc = registry.score(df, params)
