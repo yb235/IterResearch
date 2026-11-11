@@ -22,6 +22,8 @@ python -m pytest runrate_nowcast/tests -q                    # 16 个测试，�
 
 ---
 
+**数据盘点**（下一版模型的基础）：[DATA_SOURCES.md](DATA_SOURCES.md)。内容包括各模型价格表、Claude Code 的模型组合、单任务成本、订阅档位、按量/订阅分拆、能抓和抓不到的来源。
+
 ## 最新（2026-11-11）：6 月以后的官方 run-rate，以及对账
 
 ### 新数据

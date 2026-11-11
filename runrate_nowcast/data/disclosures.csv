@@ -1,0 +1,30 @@
+metric,period_start,period_end,value,unit,source,url,verification,notes
+subscription_share_of_revenue,2024-01-01,2024-12-31,0.25,share,S-1 revenue disaggregation via secondary summary,https://www.useluminix.com/reports/company-overviews/anthropic-revenue-and-burn-rate/source/2,secondary,
+consumption_revenue,2025-01-01,2025-12-31,3.796,$B,S-1 via secondary summary,https://www.useluminix.com/reports/company-overviews/anthropic-revenue-and-burn-rate/source/2,secondary,total 4.585 matches GAAP FY2025
+subscription_revenue,2025-01-01,2025-12-31,0.789,$B,S-1 via secondary summary,https://www.useluminix.com/reports/company-overviews/anthropic-revenue-and-burn-rate/source/2,secondary,17% of FY2025
+consumption_revenue,2026-01-01,2026-06-30,13.064,$B,S-1 (2026-10-26),https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0002130357,"number found in S-1 text (EDGAR full-text search '13,064')",80.2% of H1
+subscription_revenue,2026-01-01,2026-06-30,3.222,$B,S-1 (2026-10-26),https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0002130357,"number found in S-1 text (EDGAR full-text search '3,222')","19.8% of H1; Pro, Max, Team, Enterprise seats"
+consumption_revenue,2026-01-01,2026-09-30,26.3,$B,S-1/A via Sacra summary,https://sacra.com/c/anthropic/,secondary,exact figure not matched in EDGAR search
+subscription_revenue,2026-01-01,2026-09-30,6.9,$B,S-1/A via Sacra summary,https://sacra.com/c/anthropic/,secondary,"-> Q3 2026 subscription ~3.7 (21.7%), derived"
+cloud_marketplace_share,2023-01-01,2023-12-31,0.11,share,S-1 via secondary summary,https://www.useluminix.com/reports/company-overviews/anthropic-revenue-and-burn-rate/source/2,secondary,phrase 'cloud marketplace' found in S-1
+cloud_marketplace_share,2024-01-01,2024-12-31,0.32,share,S-1 via secondary summary,https://www.useluminix.com/reports/company-overviews/anthropic-revenue-and-burn-rate/source/2,secondary,
+cloud_marketplace_share,2025-01-01,2025-12-31,0.47,share,S-1 via secondary summary,https://www.useluminix.com/reports/company-overviews/anthropic-revenue-and-burn-rate/source/2,secondary,
+cloud_marketplace_share,2026-01-01,2026-06-30,0.48,share,S-1 via secondary summary,https://www.useluminix.com/reports/company-overviews/anthropic-revenue-and-burn-rate/source/2,secondary,already in observations.csv as a point share
+customers_ttm_over_100k,,2023-12-31,20,count,S-1 via secondary summary,https://www.thestack.technology/big-customers-spurred-anthropics-growth-can-they-keep-it-going/,secondary,
+customers_ttm_over_100k,,2025-09-30,950,count (more than),S-1,https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0002130357,number found in S-1 text,
+customers_ttm_over_100k,,2026-09-30,11900,count (more than),S-1,https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0002130357,number found in S-1 text,
+customers_over_1m,,2026-09-30,1900,count (more than),S-1,https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0002130357,number found in S-1 text,
+customers_over_10m,,2026-09-30,250,count (approximately),S-1,https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0002130357,phrase 'approximately 250' found in S-1 text,
+net_revenue_retention,,2026-09-30,9.0,ratio,S-1 via secondary summaries,https://www.vktr.com/ai-market/anthropic-files-public-s1-with-900-net-revenue-retention/,"term found, value secondary",excludes Pro and Max
+share_100k_customers_multi_product,,2025-12-31,0.3,share,S-1 via secondary summary,https://fourweekmba.com/ai-over-half-of-anthropics-100k-clients-now-use-two-products/,secondary,Platform + at least one first-party app
+share_100k_customers_multi_product,,2026-09-30,0.5,share (more than),S-1 via secondary summary,https://fourweekmba.com/ai-over-half-of-anthropics-100k-clients-now-use-two-products/,secondary,
+claude_code_cost_per_dev_active_day,,2026-04-15,6,"$ (average, enterprise)","Claude Code docs (archived versions, per news)",https://www.shopifreaks.com/anthropic-more-than-doubles-its-public-estimate-of-average-daily-claude-code-spending-from-6-to-13-per-developer/,secondary,90% of users below $12
+claude_code_cost_per_dev_active_day,,2026-11-11,13,"$ (average, enterprise)",Claude Code docs,https://code.claude.com/docs/en/costs,read directly 2026-11-11,90% below $30/active day; $150-250 per developer per month; page refreshed 2026-04-15
+claude_ai_web_visits,2025-08-01,2025-08-31,148,million / month,Similarweb via news,https://www.forbes.com.au/news/innovation/claude-traffic-surges-as-anthropic-readies-blockbuster-ipo/,secondary,
+claude_ai_web_visits,2026-01-01,2026-01-31,203,million / month,Similarweb via news,https://www.forbes.com.au/news/innovation/claude-traffic-surges-as-anthropic-readies-blockbuster-ipo/,secondary,
+claude_ai_web_visits,2026-04-01,2026-04-30,824,million / month,Similarweb via news,https://www.forbes.com.au/news/innovation/claude-traffic-surges-as-anthropic-readies-blockbuster-ipo/,secondary,
+claude_ai_web_visits,2026-05-01,2026-05-31,952.6,million / month,Similarweb via news,https://www.forbes.com.au/news/innovation/claude-traffic-surges-as-anthropic-readies-blockbuster-ipo/,secondary,
+claude_ai_web_visits,2026-08-01,2026-08-31,950,million / month,Similarweb via news,https://www.forbes.com.au/news/innovation/claude-traffic-surges-as-anthropic-readies-blockbuster-ipo/,secondary,plateau since May
+claude_ai_web_visits,2026-09-25,2026-10-22,1101,million / 28 days,Similarweb via news,https://fourweekmba.com/ai-claude-hits-a-record-47m-daily-visits-1-1b-in-28-days/,secondary,record 47M on 2026-10-22
+cursor_subscribers_paying_claude_max,,2026-06-30,0.214,share of panel,YipitData card panel,https://ask.yipitdata.com/insights/cursor-subscribers-claude-max-copilot-benchmark,secondary; date approximate,only public tier-mix datapoint found
+subscription_share_of_inference_compute,,2026-09-30,0.4,share (over),SemiAnalysis estimate,https://fourweekmba.com/ai-semianalysis-claude-plans-can-take-over-40-of-inference/,third-party estimate,subscriptions ~10% of revenue by their estimate; cost side
