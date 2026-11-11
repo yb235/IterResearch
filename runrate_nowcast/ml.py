@@ -220,7 +220,7 @@ def run(df=None, raw=None, params=None, label_kinds=("interp", "smoother"), verb
     df = data.load_all() if df is None else df
     raw = altdata.load_raw() if raw is None else raw
     params = calibrate.load_params() if params is None else params
-    full = data.select(df)
+    full = data.select(df, filings=True)          # filings are targets, never evidence
     targets = full[full.tier.isin(backtest.TARGET_TIERS) & (full.kind == "point") & full.metric.isin(["run_rate", "revenue"])
                    & (full.is_forecast == 0) & (full.segment == "total")]
     rows = []

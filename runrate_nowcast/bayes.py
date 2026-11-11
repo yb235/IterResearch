@@ -294,7 +294,7 @@ def mixture_predictive(post: Posterior, row, end, k=24, queries=None, segments=N
 # --------------------------------------------------------------------------- strict backtest
 def bayes_backtest(df, params, k=24, verbose=True, crossing="profile") -> pd.DataFrame:
     """Strict real-time test: posterior refit at every target's vintage, from catalog priors."""
-    full = data.select(df)
+    full = data.select(df, filings=True)          # filings are targets, never evidence
     targets = full[full.tier.isin(backtest.TARGET_TIERS) & (full.kind == "point") & full.metric.isin(["run_rate", "revenue"])
                    & (full.is_forecast == 0) & (full.segment == "total")]
     rows = []

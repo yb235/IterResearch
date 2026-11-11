@@ -116,7 +116,7 @@ def score(df, params=None, path: str = config.REGISTRY_PATH) -> pd.DataFrame:
     """Score registered forecasts against claims published after each registration."""
     from .model import Model
     tiers = Model(params).p["tiers"]
-    sel = data.select(df)
+    sel = data.select(df, filings=True)           # score against everything published later
     rows = []
     for e in load_registry(path):
         reg_day = pd.Timestamp(e["registered_at_utc"][:10])

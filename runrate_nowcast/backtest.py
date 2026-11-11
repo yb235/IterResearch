@@ -95,7 +95,7 @@ def run_backtest(df: pd.DataFrame, params: dict | None = None, refit: bool = Fal
     By default only total-company run-rate and revenue are targets, so variants with and
     without the segment layer are scored on the same set.
     """
-    full = data.select(df)
+    full = data.select(df, filings=True)          # filings are targets, never evidence
     targets = full[full.tier.isin(TARGET_TIERS) & (full.kind == "point")
                    & full.metric.isin(["run_rate", "revenue"]) & (full.is_forecast == 0)]
     if not segment_targets:

@@ -61,6 +61,11 @@ FORECAST_SD_PER_MONTH = 0.08   # extra log noise per month of horizon for foreca
 # out of the filter by default: in the layer backtest, adding them made accuracy slightly
 # worse. They are scored against the model instead (report: "Forecast claims").
 USE_FORECASTS = False
+# Numbers from the IPO filings (S-1, DRS, S-1/A, and press reports of the draft S-1) are
+# the answers, not inputs: the model forecasts from real-time data only (company
+# statements, leaks, third-party estimates, alternative data) and the filings score it.
+# Rows are tagged with filing = 1 in observations.csv.
+USE_FILINGS = False
 # Where a "crossed $X" milestone sits inside its wording window (0 = window start,
 # 1 = announcement). 0.5 is the neutral uniform rule; the fitted value is written to
 # params.json (crossing_position) by `python -m runrate_nowcast fit-crossing --write`.

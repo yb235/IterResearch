@@ -12,7 +12,7 @@ REQUIRED = [
     "period_end", "definition", "date_sd_days", "published", "tier", "source", "url",
     "include", "notes",
 ]
-OPTIONAL = {"segment": "total", "indicator": "", "is_forecast": 0, "date_kind": ""}
+OPTIONAL = {"segment": "total", "indicator": "", "is_forecast": 0, "date_kind": "", "filing": 0}
 METRICS = {"run_rate", "revenue", "share", "indicator"}
 KINDS = {"point", "lower", "upper"}
 
@@ -30,6 +30,7 @@ def load(path: str = config.DATA_PATH) -> pd.DataFrame:
     for c, v in OPTIONAL.items():
         df[c] = df[c].fillna(v) if c in df else v
     df["is_forecast"] = df["is_forecast"].astype(int)
+    df["filing"] = df["filing"].astype(int)
     apply_date_windows(df, _fitted_crossing_position())
     _validate(df)
     return df
@@ -129,8 +130,11 @@ def effective_date(row) -> pd.Timestamp:
 
 
 def select(df: pd.DataFrame, vintage=None, exclude_ids=(), verbose=False,
-           forecasts: bool | None = None) -> pd.DataFrame:
+           forecasts: bool | None = None, filings: bool | None = None) -> pd.DataFrame:
     """Rows usable as evidence: include==1, published on/before `vintage`, one row per origin.
+
+    Filing rows (S-1 and amendments) are dropped unless filings=True (or config.USE_FILINGS):
+    they are evaluation targets. Pass filings=True when selecting targets or scoring.
 
     Rows sharing an origin_id re-report the same underlying claim. Only the most
     reliable row is kept (lowest tier rank). Its `published` is set to the earliest
@@ -140,6 +144,9 @@ def select(df: pd.DataFrame, vintage=None, exclude_ids=(), verbose=False,
     use_fc = config.USE_FORECASTS if forecasts is None else forecasts
     if not use_fc and "is_forecast" in d:
         d = d[d.is_forecast != 1]
+    use_filings = config.USE_FILINGS if filings is None else filings
+    if not use_filings and "filing" in d:
+        d = d[d.filing.fillna(0).astype(int) != 1]
     if vintage is not None:
         d = d[d.published <= pd.Timestamp(vintage)]
     d["rank"] = d.tier.map(lambda t: config.TIERS[t]["rank"])

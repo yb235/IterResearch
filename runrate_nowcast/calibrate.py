@@ -123,7 +123,7 @@ def fit_indicators(df: pd.DataFrame, params: dict, names=None, verbose=True) -> 
 # --------------------------------------------------------------------------- sources
 def gaap_anchor(df: pd.DataFrame, params: dict | None = None):
     """Smoothed path using audited revenue only: the reference truth for scoring sources."""
-    sel = data.select(df)
+    sel = data.select(df, filings=True)
     gaap = sel[sel.tier == "gaap"]
     return Model(params).run(gaap)
 
@@ -131,7 +131,7 @@ def gaap_anchor(df: pd.DataFrame, params: dict | None = None):
 def source_residuals(df: pd.DataFrame, params: dict | None = None) -> pd.DataFrame:
     """Each non-GAAP claim minus the GAAP-implied value at its effective date."""
     res = gaap_anchor(df, params)
-    sel = data.select(df)
+    sel = data.select(df, filings=True)
     rows = []
     D = config.DAYS_PER_MONTH
     claims = sel[(sel.tier != "gaap") & sel.metric.isin(["run_rate", "revenue"]) & (sel.segment == "total")]
