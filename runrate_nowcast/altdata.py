@@ -251,6 +251,30 @@ FETCHERS = {
 }
 
 
+def fetch_openrouter_authors(authors=("anthropic", "openai", "google"), asof=None) -> pd.DataFrame:
+    """Weekly tokens by model author on OpenRouter (public rankings endpoint, last 53 weeks).
+
+    Only complete weeks are kept. Each value is dated at the week's last day and published the
+    day after: OpenRouter shows the week as soon as it ends, and usage logs are not revised.
+    Tokens, not spend (the endpoint has no spend for this dataset).
+    """
+    asof = pd.Timestamp(asof or dt.date.today())
+    d = json.loads(_get("https://openrouter.ai/api/frontend/v1/rankings/author-market-share"))["data"]["data"]
+    rows = []
+    for r in d:
+        start = pd.Timestamp(r["x"])
+        end = start + pd.Timedelta(days=6)
+        if end >= asof:
+            continue                          # current week is incomplete
+        tot = sum(r["ys"].values())
+        for a in authors:
+            if a in r["ys"]:
+                rows.append({"date": end, "indicator": f"openrouter_{a}_tokens", "value": float(r["ys"][a]),
+                             "published": end + pd.Timedelta(days=1), "source": "openrouter:author-market-share",
+                             "note": f"share of all OpenRouter tokens {r['ys'][a] / tot:.4f}"})
+    return pd.DataFrame(rows)
+
+
 def update(start="2025-01-01", include_snapshots=True, verbose=True) -> dict:
     """Fetch every automated indicator in the catalog and merge into indicators.csv."""
     cat = catalog()
@@ -262,6 +286,8 @@ def update(start="2025-01-01", include_snapshots=True, verbose=True) -> dict:
                 df = fetch_npm(target, r.indicator, start)
             elif kind == "pypistats":
                 df = fetch_pypistats(target, r.indicator)
+            elif kind == "openrouter_author":
+                df = fetch_openrouter_authors((target,))
             else:
                 continue
             added[r.indicator] = save_raw(df)

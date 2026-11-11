@@ -75,6 +75,31 @@ Claude Code 默认在 commit 里写 `Co-Authored-By: Claude <模型名> <noreply
   - 按实测组合加权的单价，2025-12 到 2026-06 大致持平，之后到 11 月下降约 18%。见 `pricing.py`。
 - **用作指标的结果（不用 S-1 的回测）**：直接把 commit 数当指标会更差。10 月 commit 数比 9 月多出一倍多，收入只多 14%。用它算模型组合和单价是有用的（见 README 最上面一节）。
 
+## 2b. OpenRouter 和 OpenCode（2026-11-11 加入）
+
+**OpenRouter**：公开的前端接口（`/api/frontend/v1/rankings/...`），这个环境能直接访问。快照存在 [`data/openrouter/`](data/openrouter/)。
+
+| 接口 | 内容 | 历史长度 | 用法 |
+|---|---|---|---|
+| `author-market-share` | 按公司（Anthropic、OpenAI、Google……）统计的每周 token 数 | 滚动 53 周（2025-11 起） | **已进指标目录**：`openrouter_anthropic_tokens`，每周抓取 |
+| `model-rankings-chart` | 每周排名前 9 的模型加“其他”的 token 数 | 滚动 53 周 | Anthropic 模型只在进入前 9 时才单列 |
+| `task-spend` | 按任务类型（代码、数据、agent……）统计的**花费**份额和 token 份额，最近 30 天，附带与上 30 天的变化 | 两个时点 | Anthropic 占 OpenRouter 花费：最近 30 天 25%，之前 30 天 12.5% |
+| `session-cost` | 各编码工具（Claude Code、Codex、Kilo、Hermes）上每个模型的单次会话成本中位数，按会话长短分档 | 最近 30 天 | 单任务成本。Claude Code 的“核心”会话：Opus 4.8 $2.13，Opus 5 $2.12，Opus 5.5 $1.32 |
+| `apps` | 应用排行（日、周、月 token） | 当前 | Claude Code 在 OpenRouter 上约 11 万亿 token/周 |
+
+- Anthropic 在 OpenRouter 上的周 token 数：5 月底 5.6 万亿，6 月底 6.5 万亿（峰值），7 月 5.3 万亿，8 月 4.9 万亿，9 月中 4.6 万亿，10 月中 13.4 万亿。**Q3 下滑、10 月暴涨，与收入的方向一致**；SDK 下载量在 Q3 一直在涨。
+- 局限：
+  - 只有 token，没有花费（花费只在 30 天快照里有）；
+  - 历史只有 53 周，必须每周抓取才能积累；
+  - OpenRouter 只占 Anthropic 流量的一小部分，而且偏向第三方 agent；
+  - 波动幅度比收入大得多。
+
+**OpenCode**（开源、支持多家模型的编码 agent）：
+
+- npm `opencode-ai` 月下载量：2026 年 6 月 926 万，7 月 929 万，8 月 1,082 万，9 月 1,021 万，10 月 1,479 万。Q3 持平、10 月 +45%。**它反映所有厂商的编码 agent 需求，不只 Anthropic**。已进指标目录：`npm_opencode`（monitor）。
+- OpenCode 在 OpenRouter 上只有一个第三方网关的小条目（约第 200 名），没有参考价值。
+- 它的 GitHub 仓库（不在这个会话的访问范围内）、opencode.ai、models.dev（OpenCode 团队维护的模型价格库，git 历史里有价格变化）都访问不了。
+
 ## 3. 单任务成本随时间的变化
 
 | 数据 | 内容 | 时间范围 | 状态 |

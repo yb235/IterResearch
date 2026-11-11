@@ -6,6 +6,7 @@ Inputs (written by the backtests, reports/):
   forecast_ml_<rule>_<asof>.csv                ML ridge (smoother / interpolated labels)
   forecast_price_<scheme>_g<gamma>_<rule>_<asof>.csv   C: + price-adjusted indicators
   forecast_price_<scheme>_g<gamma>_github_<rule>_<asof>.csv   D: + GitHub commits (scheme none = no price adjustment)
+  forecast_openrouter_<variant>_<rule>_<asof>.csv      E: OpenRouter weekly Anthropic tokens
 rule: publication (day before release) or period_end (date the number refers to).
 Errors are log(actual / forecast): negative = forecast too high.
 """
@@ -67,6 +68,13 @@ def collect(asof: str = "2026-11-10", reports_dir: str = config.OUTPUT_DIR) -> p
                 rows.append({"rule": rule, "model": label, "target": r.target,
                              "metric": r.metric, "vintage": r.vintage, "actual": r.actual, "forecast": r.forecast,
                              "log_err": r.log_err_model, "z": r.z})
+        for f in sorted(glob.glob(os.path.join(reports_dir, f"forecast_openrouter_*_{rule}_{asof}.csv"))):
+            variant = re.match(r".*forecast_openrouter_(.+?)_" + rule + "_", f).group(1)
+            label = {"or_only": "E OpenRouter tokens", "or_price": "E OpenRouter tokens x price",
+                     "b_plus_or": "E B + OpenRouter tokens", "opencode": "E OpenCode downloads"}.get(variant, f"E {variant}")
+            for r in pd.read_csv(f).itertuples():
+                rows.append({"rule": rule, "model": label, "target": r.target, "metric": r.metric, "vintage": r.vintage,
+                             "actual": r.actual, "forecast": r.forecast, "log_err": r.log_err_model, "z": r.z})
     d = pd.DataFrame(rows)
     if len(d):
         d["filing_target"] = d.target.map(lambda t: int(obs.loc[t, "filing"]) == 1)
@@ -126,7 +134,11 @@ def markdown(d: pd.DataFrame, asof: str = "2026-11-10") -> str:
         pairs = [paired(d, a, b, rule) for a, b in (("A claims only", "B + indicators"),
                                                     ("B + indicators", "C price-adjusted (github, gamma 1)"),
                                                     ("B + indicators", "D + GitHub commits"),
-                                                    ("B + indicators", "Bayes + indicators"))]
+                                                    ("B + indicators", "Bayes + indicators"),
+                                                    ("A claims only", "E OpenRouter tokens"),
+                                                    ("A claims only", "E OpenRouter tokens x price"),
+                                                    ("B + indicators", "E B + OpenRouter tokens"),
+                                                    ("A claims only", "E OpenCode downloads"))]
         pairs = [p for p in pairs if p]
         if pairs:
             out += ["Paired differences in |log error| (negative = second model better; 90% bootstrap interval):", "",
