@@ -162,7 +162,7 @@ def plot_errors(d: pd.DataFrame, path: str):
     fig.legend(handles=handles, loc="upper center", ncol=3, frameon=False, fontsize=9, labelcolor=INK,
                bbox_to_anchor=(0.5, 1.0))
     g = d.assign(a=d.pct_err.abs()).groupby("model").a
-    mae, n = g.mean(), g.size()
+    mae, n = g.mean(), g.count()          # count skips targets a model could not forecast
     txt = "Mean |error|: " + ",  ".join(f"{lb.split(' (')[0]} {100 * mae.get(k, np.nan):.0f}% (n={n.get(k, 0)})"
                                         for k, lb, _, _ in MODELS)
     fig.text(0.01, 0.018, txt + ".", fontsize=8, color=INK2)
