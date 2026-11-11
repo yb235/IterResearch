@@ -64,7 +64,8 @@ USE_FORECASTS = False
 # Numbers from the IPO filings (S-1, DRS, S-1/A, and press reports of the draft S-1) are
 # the answers, not inputs: the model forecasts from real-time data only (company
 # statements, leaks, third-party estimates, alternative data) and the filings score it.
-# Rows are tagged with filing = 1 in observations.csv.
+# Rows are tagged with filing = 1 in observations.csv; filing = 2 marks third-party numbers
+# published after a filing that may have been computed from it (excluded the same way).
 USE_FILINGS = False
 # Where a "crossed $X" milestone sits inside its wording window (0 = window start,
 # 1 = announcement). 0.5 is the neutral uniform rule; the fitted value is written to

@@ -47,24 +47,66 @@ def _naive(row, ev: pd.DataFrame) -> float | None:
     return float(np.exp(np.interp(xd, x, y)).sum() / config.DAYS_PER_YEAR)
 
 
-def prepublication_forecast(df: pd.DataFrame, row, params: dict | None = None, refit: bool = False,
-                            min_evidence: int = 3, forecasts: bool | None = None, crossing: str | float | None = None):
-    """Forecast one claim using only rows public the day before it, excluding its own origin.
+def unfitted_params() -> dict:
+    """Defaults plus catalog indicator priors: nothing estimated from data, so safe at any vintage."""
+    from . import altdata
+    return {"indicators": altdata.indicator_params()}
 
-    Returns (mu, sd, n_evidence, evidence_df). mu and sd are in log units for
-    run-rate claims and in $B for revenue claims. Returns None if there is too little
-    evidence.
+
+def target_vintage(row, rule: str = "publication") -> pd.Timestamp:
+    """Information date for a forecast of `row`.
+
+    publication  the day before the number was published (nowcast just before release)
+    period_end   the date the number refers to: end of the revenue period, or the run-rate
+                 date. A forecast made then cannot see later claims about the same period.
+                 Never later than the day before publication.
     """
-    vintage = pd.Timestamp(row.published) - pd.Timedelta(days=1)
+    pub = pd.Timestamp(row.published) - pd.Timedelta(days=1)
+    if rule == "publication":
+        return pub
+    if rule == "period_end":
+        d = row.period_end if row.metric == "revenue" else row.ref_date
+        return min(pd.Timestamp(d), pub)
+    raise ValueError(rule)
+
+
+def check_no_leak(ev: pd.DataFrame, vintage, row) -> None:
+    """Hard guard run on every forecast: evidence must be public by the vintage, never a
+    filing (unless config.USE_FILINGS), and never the target's own origin."""
+    late = ev[ev.published > pd.Timestamp(vintage)]
+    if len(late):
+        raise AssertionError(f"look-ahead for {row.obs_id}: {late.obs_id.tolist()[:5]}")
+    if not config.USE_FILINGS and "filing" in ev and (ev.filing.fillna(0).astype(int) != 0).any():
+        raise AssertionError(f"filing rows in evidence for {row.obs_id}: {ev[ev.filing != 0].obs_id.tolist()}")
+    if (ev.origin_id == row.origin_id).any():
+        raise AssertionError(f"target origin in evidence for {row.obs_id}")
+
+
+def prepublication_forecast(df: pd.DataFrame, row, params: dict | None = None, refit: bool = False,
+                            min_evidence: int = 3, forecasts: bool | None = None, crossing: str | float | None = None,
+                            vintage=None):
+    """Forecast one claim using only rows public at the vintage, excluding its own origin.
+
+    vintage defaults to the day before publication. Returns (mu, sd, n_evidence, evidence_df).
+    mu and sd are in log units for run-rate claims and in $B for revenue claims. Returns None
+    if there is too little evidence.
+    """
+    pub = pd.Timestamp(row.published) - pd.Timedelta(days=1)
+    vintage = pub if vintage is None else min(pd.Timestamp(vintage), pub)
+    ev0 = data.select(df, vintage=vintage, forecasts=forecasts)
+    if (ev0[ev0.origin_id != row.origin_id].metric != "indicator").sum() < min_evidence:
+        return None                         # too little evidence (checked before any fitting)
     if crossing is not None:
-        # "profile": estimate the crossing position from data public at the vintage only
+        # "profile": crossing position from data public at the vintage, with unfitted parameters
+        # (full-sample fits would carry information from after the vintage)
         from . import robust
-        rho = robust.best_crossing_position(df, Model(params).p if params else None, vintage,
+        rho = robust.best_crossing_position(df, unfitted_params(), vintage,
                                             exclude_origin=row.origin_id) if crossing == "profile" else float(crossing)
         df = data.with_crossing_position(df, rho)
         row = df[df.obs_id == row.obs_id].assign(t_eff=lambda x: x.apply(data.effective_date, axis=1)).iloc[0]
     ev = data.select(df, vintage=vintage, forecasts=forecasts)
     ev = ev[ev.origin_id != row.origin_id]
+    check_no_leak(ev, vintage, row)
     # Count claims only: indicator weeks alone are not enough evidence to score a target.
     if (ev.metric != "indicator").sum() < min_evidence or pd.Timestamp(row.t_eff) < pd.Timestamp(config.MODEL_START):
         return None
@@ -89,7 +131,8 @@ def prepublication_forecast(df: pd.DataFrame, row, params: dict | None = None, r
 
 def run_backtest(df: pd.DataFrame, params: dict | None = None, refit: bool = False,
                  min_evidence: int = 3, segment_targets: bool = False,
-                 forecasts: bool | None = None, target_ids=None, crossing=None) -> pd.DataFrame:
+                 forecasts: bool | None = None, target_ids=None, crossing=None,
+                 vintage_rule: str = "publication") -> pd.DataFrame:
     """Targets: point claims from GAAP/official sources, excluding forecasts.
 
     By default only total-company run-rate and revenue are targets, so variants with and
@@ -105,7 +148,8 @@ def run_backtest(df: pd.DataFrame, params: dict | None = None, refit: bool = Fal
         targets["kind"] = "point"
     rows = []
     for tg in targets.itertuples():
-        out = prepublication_forecast(df, tg, params, refit, min_evidence, forecasts, crossing)
+        vint = target_vintage(tg, vintage_rule)
+        out = prepublication_forecast(df, tg, params, refit, min_evidence, forecasts, crossing, vintage=vint)
         if out is None:
             continue
         mu, sd, n_ev, ev = out
@@ -124,7 +168,7 @@ def run_backtest(df: pd.DataFrame, params: dict | None = None, refit: bool = Fal
             point, naive_pt = mu, nv
         rows.append({
             "target": tg.obs_id, "metric": tg.metric,
-            "vintage": (tg.published - pd.Timedelta(days=1)).date(),
+            "vintage": vint.date(),
             "n_evidence": n_ev, "actual": tg.value, "forecast": point, "q10": lo, "q90": hi,
             "z": z, "pit": float(norm.cdf(z)), "in50": abs(z) < 0.6745, "in80": abs(z) < 1.2816,
             "log_err_model": err_model, "naive": naive_pt, "log_err_naive": err_naive,

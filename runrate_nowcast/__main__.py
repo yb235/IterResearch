@@ -16,6 +16,8 @@ python -m runrate_nowcast bayes [--lags]                 # posterior (MAP + Lapl
 python -m runrate_nowcast bayes-backtest                 # strict backtest with posterior refit per vintage
 python -m runrate_nowcast plot-errors                    # charts: actual vs forecast over time, forecast evolution
 python -m runrate_nowcast fit-crossing [--write]         # where "crossed $X" milestones sit in their windows
+python -m runrate_nowcast leakcheck [--sensitivity]       # can any forecast see what it should not?
+python -m runrate_nowcast forecast-eval                   # no-filing forecast backtests, one table
 """
 from __future__ import annotations
 
@@ -54,6 +56,8 @@ def main(argv=None):
     p.add_argument("--no-crossing-fit", action="store_true", help="keep the neutral crossing position (0.5)")
     p = sub.add_parser("plot-errors"); p.add_argument("--asof", default=None)
     p = sub.add_parser("fit-crossing"); p.add_argument("--write", action="store_true")
+    p = sub.add_parser("leakcheck"); p.add_argument("--asof", default=None); p.add_argument("--sensitivity", action="store_true")
+    p = sub.add_parser("forecast-eval"); p.add_argument("--asof", default=None)
     a = ap.parse_args(argv)
 
     warnings.simplefilter("ignore")
@@ -199,6 +203,24 @@ def main(argv=None):
         with open(out, "w") as f:
             f.write(md)
         print(f"-> {out}")
+
+    elif a.cmd == "leakcheck":
+        from . import leakcheck
+        md = leakcheck.run(df, params, sensitivity=a.sensitivity)
+        out = os.path.join(config.OUTPUT_DIR, f"leakcheck_{asof:%Y-%m-%d}.md")
+        with open(out, "w") as f:
+            f.write(md)
+        print(md); print(f"-> {out}")
+
+    elif a.cmd == "forecast-eval":
+        from . import forecast_eval
+        d = forecast_eval.collect(f"{asof:%Y-%m-%d}")
+        d.to_csv(os.path.join(config.OUTPUT_DIR, f"forecast_eval_{asof:%Y-%m-%d}.csv"), index=False)
+        md = forecast_eval.markdown(d, f"{asof:%Y-%m-%d}")
+        out = os.path.join(config.OUTPUT_DIR, f"forecast_eval_{asof:%Y-%m-%d}.md")
+        with open(out, "w") as f:
+            f.write(md)
+        print(md); print(f"-> {out}")
 
     elif a.cmd == "score":
         sc = registry.score(df, params)

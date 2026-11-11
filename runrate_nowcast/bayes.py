@@ -292,18 +292,23 @@ def mixture_predictive(post: Posterior, row, end, k=24, queries=None, segments=N
 
 
 # --------------------------------------------------------------------------- strict backtest
-def bayes_backtest(df, params, k=24, verbose=True, crossing="profile") -> pd.DataFrame:
+def bayes_backtest(df, params, k=24, verbose=True, crossing="profile", vintage_rule="publication",
+                   target_ids=None) -> pd.DataFrame:
     """Strict real-time test: posterior refit at every target's vintage, from catalog priors."""
     full = data.select(df, filings=True)          # filings are targets, never evidence
     targets = full[full.tier.isin(backtest.TARGET_TIERS) & (full.kind == "point") & full.metric.isin(["run_rate", "revenue"])
                    & (full.is_forecast == 0) & (full.segment == "total")]
     rows = []
     prev = None
-    targets = targets.sort_values("published")
+    if target_ids is not None:
+        targets = targets[targets.obs_id.isin(list(target_ids))]
+    # warm starts come from the previous fit, so order by vintage: a start point never comes from a later vintage
+    targets = targets.assign(_v=targets.apply(lambda r: backtest.target_vintage(r, vintage_rule), axis=1)).sort_values("_v")
     for tg in targets.itertuples():
-        vintage = tg.published - pd.Timedelta(days=1)
+        vintage = backtest.target_vintage(tg, vintage_rule)
         ev = data.select(df, vintage=vintage)
         ev = ev[ev.origin_id != tg.origin_id]
+        backtest.check_no_leak(ev, vintage, tg)
         if (ev.metric != "indicator").sum() < 3 or pd.Timestamp(tg.t_eff) < pd.Timestamp(config.MODEL_START):
             continue
         post = fit_posterior(df, params, vintage, exclude_origin=tg.origin_id, warm=prev, crossing=crossing)

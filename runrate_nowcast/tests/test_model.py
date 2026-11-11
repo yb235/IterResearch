@@ -131,7 +131,12 @@ def test_dedup_keeps_most_reliable_and_earliest_date():
     assert sel.published.iloc[0] == pd.Timestamp("2026-01-05")
 
 
-def test_real_data_backtest_runs_and_is_roughly_calibrated():
+def test_real_data_backtest_runs_and_is_roughly_calibrated(monkeypatch):
+    """Machinery check with the filings as inputs (GAAP anchors): the model must beat the
+    random-walk benchmark. In forecast mode (no filings) it does NOT: see README, the
+    claims-only model extrapolates H1 2026 growth into the Q3 slowdown."""
+    from runrate_nowcast import config
+    monkeypatch.setattr(config, "USE_FILINGS", True)
     df = data.load()
     bt = backtest.run_backtest(df)
     s = backtest.summarize(bt)
@@ -350,3 +355,40 @@ def test_crossing_position_moves_only_crossing_claims():
     assert late.loc["x", "date_sd_days"] < mid.loc["x", "date_sd_days"]
     assert mid.loc["x", "date_sd_days"] == pytest.approx(34 / 12 ** 0.5, rel=0.03)   # ~ uniform at 0.5
     assert late.loc["y", "ref_date"] == mid.loc["y", "ref_date"]               # non-crossing claims unchanged
+
+
+def test_filings_are_targets_not_evidence():
+    """S-1 numbers never enter the model by default, but are selectable as targets."""
+    from runrate_nowcast import config
+    df = data.load()
+    assert not config.USE_FILINGS
+    assert (df.filing == 1).sum() >= 10
+    assert (data.select(df).filing == 0).all()
+    assert (data.select(df, filings=True).filing == 1).any()
+
+
+def test_leak_guard_rejects_future_and_filing_rows():
+    from runrate_nowcast import backtest
+    df = data.load()
+    tg = data.select(df, filings=True).set_index("obs_id").loc["rr_2026_10_s1a"]
+    tg = tg.rename("rr_2026_10_s1a")
+    tg["obs_id"] = "rr_2026_10_s1a"
+    v = backtest.target_vintage(tg, "publication")
+    ev = data.select(df, vintage=v)
+    backtest.check_no_leak(ev, v, tg)                                         # clean evidence passes
+    future = data.select(df, filings=True)
+    with pytest.raises(AssertionError):
+        backtest.check_no_leak(future, v, tg)                                 # later rows and filings fail
+    assert backtest.target_vintage(tg, "period_end") == pd.Timestamp("2026-10-31")
+
+
+def test_price_index_uses_only_prices_public_on_the_date():
+    from runrate_nowcast import pricing
+    pr = pricing.load_prices()
+    early = pr[pr.release_date <= "2026-09-21"]
+    for s in ("uninformed", "nov2026_mix"):
+        assert pricing.price_level("2026-09-21", s, pr) == pricing.price_level("2026-09-21", s, early)
+    idx = pricing.price_index(["2026-06-29", "2026-07-01", "2026-09-23"], "uninformed")
+    assert idx.iloc[0] == 1.0 and idx.iloc[1] < 1.0 and idx.iloc[2] < idx.iloc[1]     # Sonnet cut, then Opus cut
+    df = data.load()
+    assert pricing.adjust_indicators(df, 1.0).equals(df)                       # claims are never adjusted

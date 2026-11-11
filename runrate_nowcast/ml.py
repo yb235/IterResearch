@@ -100,12 +100,28 @@ def labels_interp(anch: pd.Series, weeks: pd.DatetimeIndex) -> pd.Series:
 
 
 def labels_smoother(df, vintage, exclude_origin, weeks, params, last_anchor) -> pd.Series:
+    """Smoothed claims-only path. Process noise is refit on claims public at the vintage:
+    `params` (full-sample fits) is not used, since it carries information from later data."""
     sel = data.select(df[df.metric != "indicator"], vintage=vintage)
     if exclude_origin is not None:
         sel = sel[sel.origin_id != exclude_origin]
-    res = Model(params).run(sel, end=max(pd.Timestamp(vintage), last_anchor))
+    res = Model(_vintage_params(df, pd.Timestamp(vintage), exclude_origin)).run(sel, end=max(pd.Timestamp(vintage), last_anchor))
     w = weeks[(weeks >= res.dates[0]) & (weeks <= last_anchor)]
     return pd.Series([res.state(d)[0][L] + res.state(d)[0][B] for d in w], index=w)
+
+
+_VPARAMS: dict = {}
+
+
+def _vintage_params(df, vintage, exclude_origin=None) -> dict:
+    key = (vintage, exclude_origin, len(df))
+    if key not in _VPARAMS:
+        claims = df[(df.metric != "indicator") & (df.published <= vintage)]
+        if exclude_origin is not None:
+            claims = claims[claims.origin_id != exclude_origin]
+        fit = calibrate.fit_process_noise(claims, {})
+        _VPARAMS[key] = {k: v for k, v in fit.items() if k in ("sigma_l", "sigma_g", "sigma_b", "growth_reversion")}
+    return _VPARAMS[key]
 
 
 # --------------------------------------------------------------------------- training pairs
@@ -160,8 +176,9 @@ def _fit_raw(kind, X, y):
 
 
 # --------------------------------------------------------------------------- prediction for one target
-def predict_target(df, raw, target, params, label_kind="interp", models=("trend", "ridge", "gbm")):
-    vintage = pd.Timestamp(target.published) - pd.Timedelta(days=1)
+def predict_target(df, raw, target, params, label_kind="interp", models=("trend", "ridge", "gbm"), vintage=None):
+    pub = pd.Timestamp(target.published) - pd.Timedelta(days=1)
+    vintage = pub if vintage is None else min(pd.Timestamp(vintage), pub)
     anch = anchors(df, vintage, exclude_origin=target.origin_id)
     if len(anch) < 3:
         return None
@@ -215,7 +232,8 @@ def predict_target(df, raw, target, params, label_kind="interp", models=("trend"
     return preds, len(anch), t0
 
 
-def run(df=None, raw=None, params=None, label_kinds=("interp", "smoother"), verbose=True) -> pd.DataFrame:
+def run(df=None, raw=None, params=None, label_kinds=("interp", "smoother"), verbose=True,
+        vintage_rule: str = "publication") -> pd.DataFrame:
     warnings.simplefilter("ignore")
     df = data.load_all() if df is None else df
     raw = altdata.load_raw() if raw is None else raw
@@ -227,8 +245,9 @@ def run(df=None, raw=None, params=None, label_kinds=("interp", "smoother"), verb
     for tg in targets.itertuples():
         if pd.Timestamp(tg.t_eff) < pd.Timestamp(config.MODEL_START):
             continue
+        vint = backtest.target_vintage(tg, vintage_rule)
         for lk in label_kinds:
-            out = predict_target(df, raw, tg, params, lk)
+            out = predict_target(df, raw, tg, params, lk, vintage=vint)
             if out is None:
                 continue
             preds, n_anch, t0 = out
@@ -238,7 +257,7 @@ def run(df=None, raw=None, params=None, label_kinds=("interp", "smoother"), verb
                     continue
                 err = (y - p) if tg.metric == "run_rate" else math.log(tg.value / p)
                 rows.append({"target": tg.obs_id, "metric": tg.metric,
-                             "vintage": (tg.published - pd.Timedelta(days=1)).date(),
+                             "vintage": vint.date(),
                              "labels": lk, "model": k, "n_anchors": n_anch, "last_label": t0.date(),
                              "log_err": err})
         if verbose:

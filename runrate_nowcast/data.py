@@ -146,7 +146,7 @@ def select(df: pd.DataFrame, vintage=None, exclude_ids=(), verbose=False,
         d = d[d.is_forecast != 1]
     use_filings = config.USE_FILINGS if filings is None else filings
     if not use_filings and "filing" in d:
-        d = d[d.filing.fillna(0).astype(int) != 1]
+        d = d[d.filing.fillna(0).astype(int) == 0]     # 1 = from a filing, 2 = may derive from one
     if vintage is not None:
         d = d[d.published <= pd.Timestamp(vintage)]
     d["rank"] = d.tier.map(lambda t: config.TIERS[t]["rank"])
