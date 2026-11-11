@@ -17,8 +17,81 @@ python -m runrate_nowcast nowcast --asof 2026-11-10 --plot   # 报告和两张�
 python -m runrate_nowcast layers                             # 逐层回测（约 25 秒）
 python -m runrate_nowcast audit                              # 手定选项的敏感性审计（约 8 分钟）
 python -m runrate_nowcast layers --refit                     # 严格样本外逐层回测（约 20 分钟）
-python -m pytest runrate_nowcast/tests -q                    # 11 个测试，约 9 秒
+python -m pytest runrate_nowcast/tests -q                    # 16 个测试，约 10 秒
 ```
+
+---
+
+## 最新（2026-11-11）：6 月以后的官方 run-rate，以及对账
+
+### 新数据
+
+S-1/A 第 2 号修订（11/10 提交，accession 0001628280-26-072484）。原文已用 SEC 全文检索逐字核对：
+
+> "our Run-Rate Revenue was approximately $81 billion as of October 31, 2026, up $10 billion from September 30, 2026"
+
+| 口径日 | run-rate | 来源 | 表中状态 |
+|---|---|---|---|
+| 2026-05 上旬 | 突破 $47B | Series H 公告 | 已有，官方 |
+| 2026-07-31 | >$65B | Bloomberg 8/17（投资者更新，知情人士） | 已有，下界 |
+| 2026-07 下旬 | ~$71B | Axios 7/28 引用 Funda 估算 | **新增**，第三方 |
+| 2026-09-30 | ~$71B | S-1/A：由 $81B − $10B 推出 | **新增**，官方（推算） |
+| 2026-10-31 | ~$81B | S-1/A 原文 | **新增**，官方 |
+
+- **6/30 没有官方 run-rate。** DRS 草稿和 10/26 的 S-1 里，run-rate 那一行是空白占位，11/10 才填上数字。检索到的 "billion as of June 30, 2026" 是现金等其他项目。
+- **“NYT 说已过 $100B”仍按误引排除**：原文是“有望年内突破”，属于预测。
+- 第三方估计的表现：Funda 7 月下旬的 $71B 偏高约 7%（官方口径约 $65–67B）。SemiAnalysis 10 月中的 $74B 基本准确（按 9/30 和 10/31 插值约 $76B）。Sacra 的 10 月 $70B 偏低。看不出一致的偏向。
+
+### 对账一：11/10 登记的预测 vs $81B
+
+这些预测登记时，数据表里还没有这条 S-1/A。但登记时间（UTC 17:10–20:42）不能证明早于提交时间，所以只能算**信息上严格，时间上不严格**。`score` 命令按规则不计这一条。
+
+| 模型 | 10/31 预测 | 80% 区间 | 误差 | 覆盖实际值 |
+|---|---|---|---|---|
+| v1 只用信源说法 | 78.7 | [70.0, 88.5] | −2.8% | 是 |
+| v2 三层（+先行指标） | 91.5 | [84.0, 99.7] | +13.0% | 否 |
+| 贝叶斯升级版 | 95.3 | [84.8, 107.1] | +17.7% | 否 |
+| 加权平均（第 0.5 节，未登记） | 95.9 | [87.4, 105.6]，放宽后 [82.2, 112.6] | +18.4% | 否（放宽后差 1.2） |
+| ML ridge（平滑 / 插值标签，未登记） | 81.7 / 76.3 | 无 | +0.9% / −5.8% | — |
+| WSJ “>$80B”（单一匿名信源） | | | | 对 |
+
+### 对账二：严格样本外回测（只用 11/9 及以前公开的数据，参数全部重估）
+
+| 模型 | 9/30（实际 71） | 10/31（实际 81） |
+|---|---|---|
+| 状态空间，只用信源说法 | 72.7 [67.4, 78.4] | **77.3 [68.4, 87.3]** |
+| 状态空间 + 先行指标 | 76.1 [70.9, 81.6] | 92.4 [84.2, 101.4] ✗ |
+| 贝叶斯（Laplace 混合） | 76.1 [70.2, 82.5] | 90.3 [79.8, 102.2] |
+| ML ridge（平滑标签） | 74.1 | **81.5** |
+| ML ridge（插值标签） | 68.8 | 76.6 |
+
+图：[`reports/backtest_errors_2026-11-10.png`](reports/backtest_errors_2026-11-10.png)。全部 15 个目标的汇总：
+
+| 模型 | log 误差 | 80% 覆盖率 | z 的标准差 |
+|---|---|---|---|
+| 状态空间，只用信源说法 | 0.121 | 73% | 1.29 |
+| 状态空间 + 先行指标 | 0.099 | 67% | 1.21 |
+| 贝叶斯（Laplace 混合） | **0.086** | **93%** | 0.75 |
+| ML ridge（平滑标签，14 个共同目标） | 0.092 | — | — |
+| 天真基准（最近一条说法） | 0.259 | — | — |
+
+### 这说明什么
+
+1. **先行指标已经连续三次高估**：Q3 GAAP 收入（预测 20.2，实际 16.96）、9/30（+7%）、10/31（+14%）。这不是随机误差。从 Q3 开始，SDK 下载量的增长持续快于收入。指标对 10 月加速的方向是对的（官方 9/30→10/31 涨了 14%），但水平上的偏差从 Q3 一直带了过来。
+2. **全样本看，先行指标仍然有用**（log 误差 0.121 → 0.099），但优势来自 2025 年到 2026 年上半年。2026 年下半年的三个目标，只用信源说法的模型都更准。指标与收入的关系在漂移，现在的随机游走截距跟不上这种持续偏离。
+3. **贝叶斯版本的区间是诚实的**：10/31 的实际值仍落在它的 80% 区间内（z = −1.13），单一设定的三层模型则落在区间外。
+4. **ML ridge 最接近**。它从数据里学到“下载量波动会夸大收入波动”，对下载量的弹性只有约 0.17。但只有 15 个目标，不能据此说 ML 更好：在 14 个共同目标上，ML 0.092 对状态空间 0.094。
+5. 下一步最该做的改进，证据更足了：**让指标截距带趋势项**（允许“下载量持续跑赢收入”），并用 OpenAI 的数据给指标参数定先验（第 7 节）。
+
+### 加入 $81B 之后的 nowcast（11/11 已重新登记三个版本）
+
+| 量 | 只用信源说法 | 三层加权平均（按样本外放宽） | 贝叶斯 |
+|---|---|---|---|
+| 11/10 run-rate（官方口径） | 82.5 [77.1, 88.2] | 87.6 [81.7, 94.0] | 85.6 [80.4, 91.6] |
+| 2026 年 10 月收入 | 6.55 [6.16, 6.95] | 7.00 [6.65, 7.36] | — |
+| **Q4 2026 收入** | **21.6 [18.4, 24.9]** | **24.8 [21.2, 28.4]** | **23.6 [20.8, 26.7]** |
+
+有了 10/31 这个锚点，三个版本的分歧明显缩小：Q4 从 21.4 对 28.2 缩小到 21.6 对 24.8。Q4 公布后，先对账 11/10 登记的旧版本，再对账这三条新登记。报告：[`reports/nowcast_2026-11-10.md`](reports/nowcast_2026-11-10.md)、[`reports/bayes_2026-11-10.md`](reports/bayes_2026-11-10.md)。
 
 ---
 
@@ -75,7 +148,7 @@ python -m pytest runrate_nowcast/tests -q                    # 11 个测试，�
 - **它们也会在关系变化时严重误导。** 2026 年 Q3 SDK 下载量的增长远快于收入（开发者活动跑在收入前面），指标模型在 Q3 数字公布前把 Q3 收入高估了约 20%。
 - **这直接关系到现在的结论。** 当前“10–11 月再加速”的判断，主要也来自同一批下载量指标，可能是同样的高估。在 Q4 实际数字出来之前，应该把 v1（只用信源，Q4 $21.4B）和三层模型（Q4 约 $29B）看作两个都没被证伪的情景，而不是后者已经更准。
 
-### 0.5 当前结论（截至 2026-11-10，按设定加权平均）
+### 0.5 当时的结论（截至 2026-11-10，加入 S-1/A $81B 之前；已被最上面一节取代）
 
 | 量 | 加权平均（80% 区间） | 按严格样本外误差放宽（× 1.67） |
 |---|---|---|
@@ -115,7 +188,7 @@ python -m pytest runrate_nowcast/tests -q                    # 11 个测试，�
 - **准确度没有变**（0.115）。这一步改的是“知道自己有多不确定”，不是“更准”。
 - **Q3 2026 仍高估约 21%**（log 误差 −0.206，z = −2.0）。共享因子在有独立支出数据时能把这类高估减少约 17%（见测试 `test_shared_factor_reduces_double_counting`），但当实时证据只有下载量时，“两个下载量指标一起涨”最合理的解释仍然是收入涨了。真正的解决办法是离钱更近的数据（第 7 节）。
 
-**当前估计**：见 [`reports/bayes_2026-11-10.md`](reports/bayes_2026-11-10.md)：
+**当时的估计**（加入 S-1/A $81B 之前；10/31 的实际值是 81，落在这个区间外。更新后的估计见最上面一节）：
 
 | 量 | 后验中位数 / 均值 | 80% 区间 |
 |---|---|---|
@@ -285,7 +358,7 @@ python -m pytest runrate_nowcast/tests -q                    # 11 个测试，�
 | `segment` | `total` 或分部名（`subscription`、`cloud`、`claude_code`…） |
 | `is_forecast` | 1 = 预测类说法（公司目标、投资者预期），只记分，不进滤波器 |
 
-参与估计的观测（去重后共 22 条）：
+参与估计的观测（总量层，去重后共 25 条）：
 
 | 口径日 | 数值 | 类型 | Tier | 来源 |
 |---|---|---|---|---|
@@ -299,6 +372,9 @@ python -m pytest runrate_nowcast/tests -q                    # 11 个测试，�
 | 2026-04-03 | $30B | 点（突破日） | official | 与 Google/Broadcom 算力协议同发的声明（4/6） |
 | 2026-05-12 ± 8 天 | $47B | 点（突破日） | official | Series H 公告（5/28），原文“本月早些时候突破” |
 | 2026-07-31 | >$65B | 下界 | leak_tier1 | Bloomberg 8/17（知情人士，投资者更新） |
+| 2026-07-21 ± 4 天 | $71B | 点 | third_party | Axios 7/28 引用 Funda 估算 |
+| 2026-09-30 | ~$71B | 点 | official | S-1/A 第 2 号修订（11/10）：“$81B……比 9/30 多 $10B” |
+| 2026-10-31 | ~$81B | 点 | official | S-1/A 第 2 号修订（11/10）原文 |
 | Q2 2026 | $11.5B | 收入 | leak_tier1 | 同一份投资者更新里的初步数字 |
 | Q1 2026 | $4.73B | 收入 | leak_tier1 | Fortune（9 月）报道的 S-1 草稿 |
 | 2026-10-15 ± 20 天 | $70B | 点 | third_party | Sacra（日期近似） |
@@ -438,13 +514,15 @@ python -m runrate_nowcast fit --write && python -m runrate_nowcast fit-indicator
 1. **用其他公司的数据给指标先验**（跨公司的经验贝叶斯）。同一个问题在 OpenAI 身上也存在：`openai` SDK 下载量与 OpenAI 公开收入之间的弹性和漂移，可以作为 Anthropic 指标的先验，取代我手定的 β=0.75、漂移 0.003。数据（npm、PyPI 的 `openai` 包）已经在 `indicators.csv` 里，需要补的是 OpenAI 的收入和 run-rate 说法。
 2. **每周自动抓取**：npm、PyPI、Ramp、OpenRouter。历史越长，指标参数越能由数据决定；PyPI 只保留 180 天，Ramp 和 OpenRouter 只显示两期，不抓就丢了。
 3. **离钱更近的数据**：Ramp（用 web.archive.org 回填，需要放行该主机）、付费信用卡支出面板、云厂商财报。
-4. **SEC 原文**：EDGAR 要求 User-Agent 带联系邮箱，需要你提供一个。拿到后可以核对所有二手数字，并查看今天第 2 号修订里有没有 10 月初步数字。
+4. **SEC 原文**：第 2 号修订里的 10/31 数字已用全文检索（efts.sec.gov，不需要邮箱）逐字核对。下载完整原文仍然要求 User-Agent 带联系邮箱，需要你提供一个。拿到后可以核对所有二手数字，包括季度收入。
 5. **区间校准**：严格样本外 z 标准差约 1.5–1.7，报告里给出按此放宽的区间。目标样本多了以后，再按预测期分别校准。
 6. **分部趋势项**：Claude Code 份额的上升快于随机游走的假设。
 7. **抓取和抽取流水线**：可以接到本仓库的 IterResearch agent 上。
 
 ## 8. 主要来源
 
+- S-1/A 第 2 号修订（10/31 run-rate $81B，比 9/30 多 $10B）：[EDGAR 原文](https://www.sec.gov/Archives/edgar/data/2130357/000162828026072484/anthropicpbc-sx1ax2.htm)（措辞经 efts.sec.gov 全文检索核对）、[CNBC](https://www.cnbc.com/2026/11/10/anthropic-sets-price-range-of-70-to-78-in-upcoming-ipo.html)、[Fortune](https://fortune.com/2026/11/10/anthropic-ipo-price-range-ai-stock-sell-off/)
+- Funda 估算 $71B（Axios 7/28）：[IBTimes](https://www.ibtimes.com/anthropic-outgrowing-household-names-its-revenue-now-beats-starbucks-mcdonalds-combined-3805804)、[Let's Data Science](https://letsdatascience.com/news/anthropic-revenue-run-rate-surpasses-restaurant-giants-51dc3034)
 - S-1/A Q3 数据：[PPC Land](https://ppc.land/anthropic-swings-to-567m-q3-operating-loss-on-5bn-of-short-term-compute/)、[Stock Analysis](https://stockanalysis.com/news/anthropic-third-quarter-revenue-17-billion-ipo-filing/)、[Let's Data Science](https://letsdatascience.com/news/anthropic-reports-17-billion-q3-revenue-in-amended-s-1-9b752413)
 - S-1 上半年和 2025 年数据：[The Next Web](https://thenextweb.com/news/anthropic-ipo-prospectus-42bn-loss-518bn-compute)、[Allocations](https://www.allocations.com/insights/anthropic-quarterly-revenue-what-the-s-1-shows)、[PPC Land](https://ppc.land/anthropic-files-for-nasdaq-ipo-with-16-3bn-in-first-half-revenue/)
 - run-rate 定义（trailing 28 天 ×13 加订阅 ×12）：[Simon Willison](https://simonwillison.net/2026/May/31/anthropic-run-rate/)、[Let's Data Science](https://letsdatascience.com/news/anthropics-run-rate-revenue-raises-accounting-comparability-9def5524)
