@@ -40,7 +40,8 @@ def collect(asof: str = "2026-11-10", reports_dir: str = config.OUTPUT_DIR) -> p
                 for r in s.dropna(subset=[f"log_err_model_{key}"]).itertuples():
                     rows.append({"rule": rule, "model": name, "target": r.target, "metric": r.metric, "vintage": r.vintage,
                                  "actual": r.actual, "forecast": getattr(r, f"forecast_{key}"),
-                                 "log_err": getattr(r, f"log_err_model_{key}"), "z": getattr(r, f"z_{key}")})
+                                 "log_err": getattr(r, f"log_err_model_{key}"), "z": getattr(r, f"z_{key}"),
+                                 "q10": getattr(r, f"q10_{key}"), "q90": getattr(r, f"q90_{key}")})
         f = os.path.join(reports_dir, f"forecast_bayes_{rule}_{asof}.csv")
         if os.path.exists(f):
             b = pd.read_csv(f)
@@ -78,20 +79,23 @@ def collect(asof: str = "2026-11-10", reports_dir: str = config.OUTPUT_DIR) -> p
                      "gh_share": "G GitHub new-repo share"}.get(variant, f"E {variant}")
             for r in pd.read_csv(f).itertuples():
                 rows.append({"rule": rule, "model": label, "target": r.target, "metric": r.metric, "vintage": r.vintage,
-                             "actual": r.actual, "forecast": r.forecast, "log_err": r.log_err_model, "z": r.z})
+                             "actual": r.actual, "forecast": r.forecast, "log_err": r.log_err_model, "z": r.z,
+                             "q10": r.q10, "q90": r.q90})
         for f in sorted(glob.glob(os.path.join(reports_dir, f"forecast_all_*_{rule}_{asof}.csv"))):
             variant = re.match(r".*forecast_all_(.+?)_" + rule + "_", f).group(1)
             label = {"all_price": "F all signals x price", "all_raw": "F all signals",
                      "core_price": "F core signals x price (selected by backtest)"}.get(variant, f"F {variant}")
             for r in pd.read_csv(f).itertuples():
                 rows.append({"rule": rule, "model": label, "target": r.target, "metric": r.metric, "vintage": r.vintage,
-                             "actual": r.actual, "forecast": r.forecast, "log_err": r.log_err_model, "z": r.z})
+                             "actual": r.actual, "forecast": r.forecast, "log_err": r.log_err_model, "z": r.z,
+                             "q10": r.q10, "q90": r.q90})
         f = os.path.join(reports_dir, f"forecast_mlall_{rule}_{asof}.csv")
         if os.path.exists(f):
             m = pd.read_csv(f)
-            for r in m[m.model == "ridge"].itertuples():
+            for r in m[m.model.isin(["ridge", "gbm"])].itertuples():
                 act = float(obs.loc[r.target, "value"])
-                rows.append({"rule": rule, "model": f"ML all signals ({r.labels})", "target": r.target, "metric": r.metric,
+                name = f"ML all signals ({r.labels})" if r.model == "ridge" else f"ML gbm all signals ({r.labels})"
+                rows.append({"rule": rule, "model": name, "target": r.target, "metric": r.metric,
                              "vintage": r.vintage, "actual": act, "forecast": act / math.exp(r.log_err),
                              "log_err": r.log_err, "z": np.nan})
     d = pd.DataFrame(rows)

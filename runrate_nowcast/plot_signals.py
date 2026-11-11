@@ -20,6 +20,7 @@ from . import altdata, config, data, forecast_eval, pricing
 from .plot import AQUA, BLUE, GRID, INK, INK2, SURFACE
 
 YELLOW, MAGENTA = "#eda100", "#e87ba4"          # categorical slots 4 and 5 (validated with 1-3, all pairs)
+GREEN, VIOLET = "#008300", "#6250d6"            # slots 6 and 7; {aqua, magenta, green, yellow, violet} validated all pairs
 BASE = pd.Timestamp("2026-01-08")
 START, END = pd.Timestamp("2025-11-15"), pd.Timestamp("2026-11-08")
 Q3 = (pd.Timestamp("2026-07-01"), pd.Timestamp("2026-09-30"))
@@ -136,11 +137,12 @@ def plot_signals(path: str):
     return path
 
 
-MODELS = [  # label in forecast_eval, legend label, color, marker
+MODELS = [  # label in forecast_eval, legend label, color, marker. Shapes double the colors (CVD floor band).
     ("A claims only", "A  claims only", AQUA, "s"),
-    ("B + indicators", "B  + SDK downloads", BLUE, "o"),
-    ("C price-adjusted (github, gamma 1)", "C  SDK downloads x price per token", YELLOW, "D"),
-    ("E OpenRouter tokens x price", "E  OpenRouter tokens x price per token", MAGENTA, "^"),
+    ("E OpenRouter tokens x price", "E  OpenRouter tokens x price", MAGENTA, "^"),
+    ("G GitHub new-repo share", "G  GitHub new-repo share", GREEN, "o"),
+    ("R Ramp adoption", "R  Ramp business adoption", YELLOW, "D"),
+    ("ML gbm all signals (interp)", "ML  gradient boosting, all signals", VIOLET, "P"),
 ]
 
 
@@ -179,11 +181,11 @@ def plot_errors(path: str, asof: str = "2026-11-10"):
             ax.axvspan(min(h2) - 0.5, max(h2) + 0.5, color=GRID, alpha=0.45, lw=0)
         ax.axhspan(math.log(0.9), math.log(1.1), color=GRID, alpha=0.9, lw=0)
         ax.axhline(0, color=INK, lw=1)
-        offs = np.linspace(-0.27, 0.27, len(MODELS))
+        offs = np.linspace(-0.32, 0.32, len(MODELS))
         for (key, label, color, mk), off in zip(MODELS, offs):
             h = g[g.model == key]
             x = h.target.map(xpos).to_numpy(float) + off
-            y = h.y.clip(upper=math.log(2.6)).to_numpy()
+            y = h.y.clip(lower=math.log(0.57), upper=math.log(2.6)).to_numpy()
             ax.vlines(x, 0, y, color=color, lw=1.2, alpha=0.7)
             ax.scatter(x, y, marker=mk, s=50, color=color, edgecolors=SURFACE, linewidths=1.2, zorder=4)
         ax.set_yticks([math.log(1 + p / 100) for p in pct])
@@ -192,20 +194,96 @@ def plot_errors(path: str, asof: str = "2026-11-10"):
         mae = g.assign(a=g.log_err.abs()).groupby("model").a.mean()
         n = g.groupby("model").size()
         ax.set_title(titles[rule], loc="left", fontsize=11, color=INK, pad=8)
-        ax.set_title("mean |log error|  " + "   ".join(f"{lab.split('  ')[0]} {mae.get(k, np.nan):.3f}"
+        ax.set_title("mean |log error|  " + "   ".join(f"{lab.split('  ')[0]} {mae.get(k, np.nan):.2f}"
                                                         for k, lab, _, _ in MODELS) + f"   (n={int(n.max())})",
                      loc="right", fontsize=8.5, color=INK2, pad=8)
         if h2:
             ax.text(np.mean(h2), math.log(2.6), "H2 2026", ha="center", va="top", fontsize=8, color=INK2)
+        for (key, label, color, mk), off in zip(MODELS, offs):        # label errors drawn at the panel edge
+            h = g[g.model == key]
+            for r in h[(h.y < math.log(0.57)) | (h.y > math.log(2.6))].itertuples():
+                yy = math.log(0.57) if r.y < 0 else math.log(2.6)
+                ax.annotate(f"{100 * (math.exp(r.y) - 1):+.0f}%", (xpos[r.target] + off, yy), fontsize=6.5, color=INK2,
+                            ha="center", va="bottom" if r.y < 0 else "top", xytext=(0, 5 if r.y < 0 else -5),
+                            textcoords="offset points", rotation=90)
     axes[1].set_xticks(range(len(order)))
     axes[1].set_xticklabels([_target_label(obs.loc[t]) for t in order], fontsize=7.5)
     axes[1].set_xlim(-0.6, len(order) - 0.4)
     handles = [Line2D([], [], marker=mk, ls="", color=c, markeredgecolor=SURFACE, ms=8, label=lab) for _, lab, c, mk in MODELS]
     fig.suptitle("Forecasts without the S-1: error for each target  (+ = forecast too high; band = within 10%)",
                  x=0.01, y=0.99, ha="left", fontsize=12, color=INK)
-    fig.legend(handles=handles, loc="upper left", ncol=4, frameon=False, fontsize=9, labelcolor=INK, bbox_to_anchor=(0.005, 0.965))
+    fig.legend(handles=handles, loc="upper left", ncol=5, frameon=False, fontsize=9, labelcolor=INK, bbox_to_anchor=(0.005, 0.965))
     fig.text(0.01, 0.005, "Inputs exclude the S-1, its amendments and third-party numbers that may derive from them; parameters are refit at "
-             "each vintage. Errors above +160% are drawn at the top edge. Data: reports/forecast_eval_" + asof + ".csv",
+             "each vintage. Errors beyond the panel are drawn at its edge and labeled. Data: reports/forecast_eval_" + asof + ".csv",
+             fontsize=8, color=INK2)
+    fig.tight_layout(rect=(0, 0.02, 1, 0.94))
+    fig.savefig(path, dpi=200, facecolor=SURFACE)
+    plt.close(fig)
+    return path
+
+
+def plot_forecasts(path: str, asof: str = "2026-11-10"):
+    """Actual values (black) vs the forecast of each model, with 80% intervals where the model has one.
+    Rows: run-rate targets, quarterly revenue targets. Columns: the two vintage rules. Log scale."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    from matplotlib.lines import Line2D
+    from matplotlib.ticker import FixedLocator, NullLocator
+
+    d = forecast_eval.collect(asof)
+    obs = data.load().set_index("obs_id")
+    d = d[d.model.isin([m[0] for m in MODELS])].copy()
+    d["date"] = [obs.loc[t, "period_end"] if m == "revenue" else obs.loc[t, "ref_date"] for t, m in zip(d.target, d.metric)]
+    d["days"] = [(obs.loc[t, "period_end"] - obs.loc[t, "period_start"]).days if m == "revenue" else 0
+                 for t, m in zip(d.target, d.metric)]
+    d = d[~((d.metric == "revenue") & (d.days > 100))]          # FY2025 is annual: left out of the quarterly panel
+    fig, axes = plt.subplots(2, 2, figsize=(14, 9.2), sharex=True)
+    fig.patch.set_facecolor(SURFACE)
+    cols = {"publication": "Forecast the day before each number was published",
+            "period_end": "Forecast on the date the number refers to (a true forecast)"}
+    rows = {"run_rate": ("Run-rate, $B", [5, 10, 20, 40, 80, 160, 320], (4, 350)),
+            "revenue": ("Quarterly revenue, $B", [0.25, 0.5, 1, 2, 4, 8, 16, 32], (0.2, 40))}
+    span = pd.Timedelta(days=24)
+    offs = np.linspace(-1, 1, len(MODELS)) * span / 2
+    for j, rule in enumerate(("publication", "period_end")):
+        for i, metric in enumerate(("run_rate", "revenue")):
+            ax = axes[i, j]
+            _style(ax)
+            ax.set_yscale("log")
+            g = d[(d.rule == rule) & (d.metric == metric)]
+            act = g.drop_duplicates("target")
+            for (key, label, color, mk), off in zip(MODELS, offs):
+                h = g[g.model == key]
+                x = pd.to_datetime(h.date) + off
+                if h.q10.notna().any():
+                    ax.vlines(x, h.q10, h.q90, color=color, lw=1.4, alpha=0.55)
+                ax.scatter(x, h.forecast.clip(upper=rows[metric][2][1] * 0.97), marker=mk, s=40, color=color,
+                           edgecolors=SURFACE, linewidths=1.0, zorder=4)
+            ax.scatter(pd.to_datetime(act.date), act.actual, marker="_", s=420, color=INK, linewidths=2.4, zorder=5)
+            for r in act.itertuples():
+                ax.annotate(f"{r.actual:g}", (pd.Timestamp(r.date), r.actual), xytext=(14, -3), textcoords="offset points",
+                            fontsize=7.5, color=INK2, va="top")
+            ticks = rows[metric][1]
+            ax.yaxis.set_major_locator(FixedLocator(ticks))
+            ax.yaxis.set_minor_locator(NullLocator())
+            ax.set_yticklabels([f"{t:g}" for t in ticks])
+            ax.set_ylim(*rows[metric][2])
+            if i == 0:
+                ax.set_title(cols[rule], loc="left", fontsize=11, color=INK, pad=8)
+            if j == 0:
+                ax.set_ylabel(rows[metric][0], color=INK2, fontsize=9)
+    for ax in axes[1]:
+        ax.xaxis.set_major_locator(mdates.MonthLocator(bymonth=[1, 4, 7, 10]))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+    handles = [Line2D([], [], marker="_", ls="", color=INK, ms=16, markeredgewidth=2.4, label="Actual")]
+    handles += [Line2D([], [], marker=mk, ls="", color=c, markeredgecolor=SURFACE, ms=8, label=lab) for _, lab, c, mk in MODELS]
+    fig.suptitle("Forecasts without the S-1 vs actual values  (vertical bars: 80% interval where the model gives one; log scale)",
+                 x=0.01, y=0.99, ha="left", fontsize=12, color=INK)
+    fig.legend(handles=handles, loc="upper left", ncol=6, frameon=False, fontsize=9, labelcolor=INK, bbox_to_anchor=(0.005, 0.965))
+    fig.text(0.01, 0.005, "Actuals: official run-rates and S-1 quarterly revenue (FY2025 left out). Inputs exclude the S-1 and numbers derived "
+             "from it; parameters refit at each vintage. Forecasts above the panel are drawn at its top. Data: reports/forecast_eval_" + asof + ".csv",
              fontsize=8, color=INK2)
     fig.tight_layout(rect=(0, 0.02, 1, 0.94))
     fig.savefig(path, dpi=200, facecolor=SURFACE)
@@ -216,4 +294,5 @@ def plot_errors(path: str, asof: str = "2026-11-10"):
 def run(asof: str = "2026-11-10"):
     p1 = plot_signals(os.path.join(config.OUTPUT_DIR, f"signals_{asof}.png"))
     p2 = plot_errors(os.path.join(config.OUTPUT_DIR, f"forecast_errors_nofiling_{asof}.png"), asof)
-    return p1, p2
+    p3 = plot_forecasts(os.path.join(config.OUTPUT_DIR, f"forecast_vs_actual_nofiling_{asof}.png"), asof)
+    return p1, p2, p3
