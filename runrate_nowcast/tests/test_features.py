@@ -31,27 +31,37 @@ REF_COMMIT = "9e8d419"          # the as-of feature store as reviewed (sub-task 
 NEW_COLUMNS = F.FEATURE_SETS["all"][len(F.FEATURE_SETS["g_spec"]):]
 CONSUMER_COLUMNS = [c for c in NEW_COLUMNS if c.startswith("consumer_")]
 
-# Stand-in for data/consumer_signals.csv while it does not exist (same columns). Includes rows
-# that must never be used: no publication date, a month-only date, a one-day window, a
-# different metric (unique visitors).
+# A synthetic consumer_signals.csv in the real file's conventions, for the rules on that source.
+# Also stands in for the real file in the generic tests if the file is absent. Includes rows that
+# must never be used: no publication date, a month-only date, a quarter window, a projection, other
+# series (unique visitors, net revenue).
 _C = ["series", "entity", "metric", "period_start", "period_end", "value", "unit", "source", "published"]
+_V, _S, _D, _R = ("web_visits_monthly", "visits_month"), ("web_traffic_share", "share_genai_web_visits_ww"), \
+    ("app_downloads_monthly", "downloads_ww"), ("app_revenue_monthly", "consumer_spend_gross_ww")
 SYNTH_CONSUMER = pd.DataFrame([
-    ["web_claude", "Claude", "web_visits", "2026-07-01", "2026-07-31", 950, "millions of visits", "s", "2026-08-20"],
-    ["web_chatgpt", "ChatGPT", "web_visits", "2026-07-01", "2026-07-31", 5800, "millions of visits", "s", "2026-08-20"],
-    ["web_gemini", "Gemini", "web_visits", "2026-07-01", "2026-07-31", 1100, "millions of visits", "s", "2026-08-25"],
-    ["web_claude", "Claude", "web_visits", "2026-08-01", "2026-08-31", 960, "millions of visits", "s", "2026-09-18"],
-    ["web_chatgpt", "ChatGPT", "web_visits", "2026-08-01", "2026-08-31", 5700, "millions of visits", "s", "2026-09-18"],
-    ["web_gemini", "Gemini", "web_visits", "2026-08", "2026-08", 1.3, "billion visits", "s", "2026-09-22"],
-    ["web_claude", "anthropic", "web_visits", "2026-08-01", "2026-08-31", 980, "millions of visits", "s2", "2026-10-05"],
-    ["web_claude", "Claude", "web_visits", "2026-09-01", "2026-09-30", 1000, "millions of visits", "s", np.nan],
-    ["web_chatgpt", "ChatGPT", "web_visits", "2026-09-01", "2026-09-30", 6000, "millions of visits", "s", "2026-10"],
-    ["web_claude", "Claude", "web_visits", "2026-10-22", "2026-10-22", 47, "millions of visits", "s", "2026-10-25"],
-    ["web_claude", "Claude", "unique_visitors", "2026-08-01", "2026-08-31", 300, "millions", "s", "2026-09-10"],
-    ["app_claude", "Claude", "app_downloads", "2026-04-01", "2026-04-30", 20, "million downloads", "s", "2026-05-15"],
-    ["app_chatgpt", "ChatGPT", "app_downloads", "2026-04-01", "2026-04-30", 60, "million downloads", "s", "2026-05-15"],
-    ["app_gemini", "Gemini", "app_downloads", "2026-04-01", "2026-04-30", 30, "million downloads", "s", "2026-05-20"],
-    ["app_claude", "Claude", "app_downloads", "2026-05-01", "2026-05-31", 18, "million downloads", "s", "2026-06-10"],
-    ["app_claude", "Claude", "app_revenue", "2026-05-01", "2026-05-31", 92, "USD million", "s", "2026-06-12"],
+    [*_S[:1], "claude", _S[1], "2026-06-01", "2026-06-30", 9.2, "percent", "s", "2026-07-15"],
+    [*_S[:1], "chatgpt", _S[1], "2026-06-01", "2026-06-30", 52.7, "percent", "s", "2026-07-15"],
+    [*_S[:1], "gemini", _S[1], "2026-06-01", "2026-06-30", 27.8, "percent", "s", "2026-07-15"],
+    [*_V[:1], "claude", _V[1], "2026-07-01", "2026-07-31", 950, "million / month", "s", "2026-08-20"],
+    [*_V[:1], "chatgpt", _V[1], "2026-07-01", "2026-07-31", 5800, "million / month", "s", "2026-08-20"],
+    [*_V[:1], "gemini", _V[1], "2026-07-01", "2026-07-31", 1100, "million / month", "s", "2026-08-25"],
+    [*_V[:1], "claude", _V[1], "2026-08-01", "2026-08-31", 960, "million / month", "s", "2026-09-18"],
+    [*_V[:1], "chatgpt", _V[1], "2026-08-01", "2026-08-31", 5700, "million / month", "s", "2026-09-18"],
+    [*_V[:1], "gemini", _V[1], "2026-08-01", "2026-08-31", 1.3, "billion / month", "s", "2026-09-22"],
+    [*_V[:1], "anthropic", _V[1], "2026-08-01", "2026-08-31", 980, "million / month", "s2", "2026-10-05"],
+    [*_V[:1], "claude", _V[1], "2026-09-01", "2026-09-30", 1000, "million / month", "s", np.nan],
+    [*_V[:1], "chatgpt", _V[1], "2026-09-01", "2026-09-30", 6000, "million / month (projection)", "s", "2026-10-03"],
+    [*_V[:1], "gemini", _V[1], "2026-09-01", "2026-09-30", 1200, "million / month", "s", "2026-10"],
+    [*_V[:1], "claude", _V[1], "2026-07-01", "2026-09-30", 2900, "million / month", "s", "2026-10-25"],
+    ["web_unique_visitors_monthly", "claude", "unique_visitors_month", "2026-08-01", "2026-08-31", 300,
+     "million / month", "s", "2026-09-10"],
+    [*_D[:1], "claude", _D[1], "2026-04-01", "2026-04-30", 20, "million / month", "s", "2026-05-15"],
+    [*_D[:1], "chatgpt", _D[1], "2026-04-01", "2026-04-30", 60, "million / month", "s", "2026-05-15"],
+    [*_D[:1], "gemini", _D[1], "2026-04-01", "2026-04-30", 30, "million / month", "s", "2026-05-20"],
+    [*_D[:1], "claude", _D[1], "2026-05-01", "2026-05-31", 18, "million / month", "s", "2026-06-10"],
+    [*_R[:1], "claude", _R[1], "2026-05-01", "2026-05-31", 92, "$M / month", "s", "2026-06-12"],
+    [*_R[:1], "chatgpt", "net_revenue_ww", "2026-05-01", "2026-05-31", 200, "$M / month (net)", "s", "2026-06-12"],
+    [*_R[:1], "gemini", "net_revenue_ww", "2026-05-01", "2026-05-31", 10, "$M / month (net)", "s", "2026-06-12"],
 ], columns=_C).assign(url="", verification="synthetic", notes="test fixture")
 
 
@@ -494,9 +504,12 @@ def _consumer(vintage, entity="anthropic"):
 
 
 def test_consumer_rows_used_from_their_published_date_only():
-    jul, aug1, aug2 = 950 / (950 + 5800 + 1100), 960 / (960 + 5700 + 1300), 980 / (980 + 5700 + 1300)
-    assert _consumer("2026-08-24")["consumer_web_visits_share"].isna().all()       # Gemini July not out yet
-    assert _consumer("2026-08-25")["consumer_web_visits_share"].iloc[-1] == pytest.approx(jul)
+    jun, jul = 9.2 / (9.2 + 52.7 + 27.8), 950 / (950 + 5800 + 1100)
+    aug1, aug2 = 960 / (960 + 5700 + 1300), 980 / (980 + 5700 + 1300)
+    assert _consumer("2026-07-14")["consumer_web_visits_share"].isna().all()
+    assert _consumer("2026-07-15")["consumer_web_visits_share"].iloc[-1] == pytest.approx(jun)    # GenAI shares
+    assert _consumer("2026-08-24")["consumer_web_visits_share"].iloc[-1] == pytest.approx(jun)    # Gemini July: 08-25
+    assert _consumer("2026-08-25")["consumer_web_visits_share"].iloc[-1] == pytest.approx(jul)    # visit counts
     assert _consumer("2026-09-21")["consumer_web_visits_share"].iloc[-1] == pytest.approx(jul)
     assert _consumer("2026-09-22")["consumer_web_visits_share"].iloc[-1] == pytest.approx(aug1)   # 1.3 billion
     f = _consumer("2026-10-05")
@@ -504,18 +517,19 @@ def test_consumer_rows_used_from_their_published_date_only():
     assert f.loc[pd.Timestamp("2026-09-24"), "consumer_web_visits_share"] == pytest.approx(aug1)   # not rewritten
     assert f["consumer_web_visits_dlog"].iloc[-1] == pytest.approx(math.log(980 / 950))
     assert _consumer("2026-09-18")["consumer_web_visits_dlog"].iloc[-1] == pytest.approx(math.log(960 / 950))
-    assert _consumer("2026-09-18", "openai")["consumer_web_visits_dlog"].iloc[-1] == pytest.approx(math.log(5700 / 5800))
     assert _consumer("2026-10-05", "openai")["consumer_web_visits_share"].iloc[-1] == pytest.approx(5700 / 7980)
-    # never used: unique visitors (09-10), a one-day window (10-25), no / month-only publication date (September)
+    # never used: unique visitors (09-10), the projection (10-03), a quarter window (10-25), September
+    # rows without a full publication date
     assert np.isnan(_consumer("2026-09-10")["consumer_web_visits_dlog"].iloc[-1])
+    assert _consumer("2026-10-03", "openai")["consumer_web_visits_dlog"].iloc[-1] == pytest.approx(math.log(5700 / 5800))
     late = _consumer("2026-11-12")
     assert late["consumer_web_visits_dlog"].iloc[-1] == pytest.approx(math.log(980 / 950))
     assert late["consumer_web_visits_share"].iloc[-1] == pytest.approx(aug2)
     # downloads: a month's share needs all three; the change needs the month before
-    f = _consumer("2026-06-10")
+    f = _consumer("2026-06-12")
     assert f["consumer_app_downloads_share"].iloc[-1] == pytest.approx(20 / 110)
     assert f["consumer_app_downloads_dlog"].iloc[-1] == pytest.approx(math.log(18 / 20))
-    assert f["consumer_app_revenue_share"].isna().all() and f["consumer_app_revenue_dlog"].isna().all()
+    assert f["consumer_app_revenue_share"].isna().all() and f["consumer_app_revenue_dlog"].isna().all()   # net: not used
 
 
 def test_consumer_values_carried_at_most_62_days():

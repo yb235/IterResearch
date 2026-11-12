@@ -23,7 +23,13 @@ Feature sets: FEATURE_SETS["g_spec"] holds the original columns (sub-task E; the
 and the frozen Q4 forecasts use them, and their values do not change); FEATURE_SETS["all"]
 adds the columns built from the extra sources (framework download shares, coding-agent and
 cloud SDK downloads, OpenRouter competitor shares, the GitHub model-family mix and the Ramp
-AI Index history). asof_features returns all columns.
+AI Index history, and consumer_signals.csv when present). asof_features returns all columns;
+feature_set="g_spec" returns the original ones only, with identical values.
+
+Not used: the Similarweb and app-store points in disclosures.csv (news numbers without clean
+publication dates; consumer data enters only through consumer_signals.csv, where each row is
+dated by the article that first reported it), the latest-week Ramp token-spend snapshot (two
+points), SEC filing mentions, and levels of adoption-curve or download series (changes only).
 
 Sources read: SOURCE_FILES below, plus data/model_prices.csv and data/github_claude_family.csv
 through pricing.price_index. observations.csv, which holds the filing numbers (the targets),
@@ -113,7 +119,21 @@ RAMP_HISTORY_SERIES = {
     "top_10_percent_median_pepm": ("ramp_log_pepm_top10", np.log),
     "ai_share_of_tpv": ("ramp_ai_spend_share", lambda x: x),
 }
-# Consumer signals (consumer_signals.csv): entity names and metric keywords -> canonical names
+# Consumer signals (consumer_signals.csv). Only these (series, metric) rows are used, as monthly
+# worldwide figures comparable across Claude / ChatGPT / Gemini:
+#   count      a level: the entity's share of the three, and the log change of its own level
+#   share_pct  a share of a wider total (Similarweb's GenAI web traffic): only the share of the
+#              three (same month, same metric), which equals the visit-count share
+# Not used: ranks, DAU/MAU, sessions, US-only or iOS-only counts, Claude Code visits, growth rates,
+# per-user or per-download values, net revenue (one Claude month), quarterly / daily / 28-day
+# windows, and rows whose unit marks a projection, pacing estimate, typical month or unclear scope.
+CONSUMER_SERIES = {
+    ("web_visits_monthly", "visits_month"): ("web_visits", "count"),
+    ("web_traffic_share", "share_genai_web_visits_ww"): ("web_visits", "share_pct"),
+    ("app_downloads_monthly", "downloads_ww"): ("app_downloads", "count"),
+    ("app_revenue_monthly", "consumer_spend_gross_ww"): ("app_revenue", "count"),
+}
+CONSUMER_EXCLUDED_UNITS = ("projection", "pacing", "estimate", "typical", "scope unclear", "cumulative")
 CONSUMER_ENTITY = {"anthropic": "anthropic", "claude": "anthropic", "openai": "openai", "chatgpt": "openai",
                    "google": "google", "gemini": "google"}
 CONSUMER_METRICS = ("web_visits", "app_downloads", "app_revenue")
@@ -275,17 +295,22 @@ FEATURE_DOCS = {
     "ramp_vendor_share_chg":
         "Change in ramp_vendor_share from the month before, both as known at the cutoff.",
 }
-_CONSUMER_LABEL = {"web_visits": "monthly web visits (claude.ai / chatgpt.com / gemini.google.com)",
-                   "app_downloads": "monthly mobile app downloads", "app_revenue": "monthly mobile app revenue"}
+_CONSUMER_LABEL = {
+    "web_visits": "monthly web visits (Similarweb: web_visits_monthly/visits_month counts, and "
+                  "web_traffic_share/share_genai_web_visits_ww, a share of GenAI web traffic whose ratio among "
+                  "the three equals the visit-count ratio)",
+    "app_downloads": "monthly worldwide app downloads (app_downloads_monthly/downloads_ww)",
+    "app_revenue": "monthly worldwide gross app consumer spend (app_revenue_monthly/consumer_spend_gross_ww)"}
 for _m in CONSUMER_METRICS:
     FEATURE_DOCS[f"consumer_{_m}_share"] = (
-        f"data/consumer_signals.csv (optional; NaN while the file is absent): {_CONSUMER_LABEL[_m]}, the "
-        "entity's value over the sum for anthropic + openai + google (Claude, ChatGPT, Gemini) in the same "
-        "calendar month (rows whose period_start..period_end is not one calendar month are ignored). Public on "
-        "the row's `published` date (YYYY-MM-DD, the first article reporting it); rows without one are never "
-        "used. A later figure for a month takes over from its own publication date; each month's share uses the "
-        "latest public figure of all three, and needs all three. Latest month carried at most 62 days. Units "
-        "scaled by the `unit` text (thousand/million/billion); sources are mixed if the file mixes them. Level.")
+        f"data/consumer_signals.csv (optional; NaN while the file is absent): {_CONSUMER_LABEL[_m]}; the "
+        "entity's value over the sum for Claude + ChatGPT + Gemini in the same calendar month and of the same "
+        "kind (rows not covering exactly one calendar month, and units marking a projection, pacing estimate, "
+        "typical month or unclear scope, are ignored; other series in the file are not used). Public on the "
+        "row's `published` date (YYYY-MM-DD, the first article reporting it); rows without one are never used. "
+        "A later figure for a month takes over from its own publication date; each month's share uses the "
+        "latest public figure of all three and needs all three. Latest month carried at most 62 days. Values "
+        "are news-reported (verification: search summary) and mix panels when the file does. Level.")
     FEATURE_DOCS[f"consumer_{_m}_dlog"] = (
         f"Same file and rules (public on `published`, carried at most 62 days): log change in the entity's own "
         f"{_CONSUMER_LABEL[_m]} from the month before, both months as known at the cutoff (NaN unless both "
@@ -471,19 +496,6 @@ def _consumer_entity(text) -> str | None:
     return hits.pop() if len(hits) == 1 else None
 
 
-def _consumer_metric(text) -> str | None:
-    t = str(text).lower()
-    if "unique" in t or "visitor" in t:          # a different count from visits
-        return None
-    if "visit" in t or "traffic" in t:
-        return "web_visits"
-    if "download" in t or "install" in t:
-        return "app_downloads"
-    if "revenue" in t or "spend" in t:
-        return "app_revenue"
-    return None
-
-
 def _unit_scale(text) -> float:
     t = str(text).lower()
     for pat, k in ((r"billion|\bbn\b|\bb\b", 1e9), (r"million|\bmn\b|\bmm\b|\bm\b", 1e6), (r"thousand|\bk\b", 1e3)):
@@ -505,25 +517,31 @@ def _calendar_month(start: pd.Series, end: pd.Series) -> tuple[pd.Series, pd.Ser
 
 
 def _consumer_obs(c: pd.DataFrame | None, entity: str) -> pd.DataFrame:
-    """consumer_signals.csv: the entity's log value and its share among the three entities, per
-    metric and calendar month. Public on `published` (YYYY-MM-DD); rows without it never used."""
+    """consumer_signals.csv (CONSUMER_SERIES rows only): the entity's log level and its share of
+    the three entities, per metric and calendar month. Public on `published` (YYYY-MM-DD); rows
+    without it are never used."""
     if c is None or not len(c) or entity not in CONSUMER_ENTITIES:
         return pd.DataFrame(columns=_OBS_COLS)
-    ent = c["entity"].map(_consumer_entity)
-    met = pd.Series([_consumer_metric(m) or _consumer_metric(s) for m, s in zip(c["metric"], c["series"])],
-                    index=c.index)
+    use = [CONSUMER_SERIES.get((s, m)) for s, m in zip(c["series"], c["metric"])]
+    unit = c["unit"].astype(str).str.lower()
     month, monthly = _calendar_month(c["period_start"], c["period_end"])
     val = pd.to_numeric(c["value"], errors="coerce") * c["unit"].map(_unit_scale)
     pub = _date(c["published"])
-    ok = monthly & ent.notna() & met.notna() & (val > 0) & pub.notna()
-    d = pd.DataFrame({"entity": ent, "metric": met, "ref": month, "published": pub, "value": val})[ok]
+    ent = c["entity"].map(_consumer_entity)
+    ok = (pd.Series([u is not None for u in use], index=c.index) & monthly & ent.notna() & (val > 0) & pub.notna()
+          & ~unit.apply(lambda u: any(w in u for w in CONSUMER_EXCLUDED_UNITS)))
+    d = pd.DataFrame({"entity": ent, "metric": [u[0] if u else None for u in use],
+                      "kind": [u[1] if u else None for u in use], "ref": month, "published": pub, "value": val})[ok]
     i = CONSUMER_ENTITIES.index(entity)
     parts = []
     for m in CONSUMER_METRICS:
-        x = d[d["metric"] == m]
-        comps = [x[x["entity"] == e][["ref", "published", "value"]] for e in CONSUMER_ENTITIES]
-        parts.append(comps[i].assign(series=f"consumer_{m}_log", value=np.log(comps[i]["value"].astype(float))))
-        parts.append(_as_known_combos(comps, lambda v: v[i] / sum(v)).assign(series=f"consumer_{m}_share"))
+        for kind in ("count", "share_pct"):
+            x = d[(d["metric"] == m) & (d["kind"] == kind)]
+            comps = [x[x["entity"] == e][["ref", "published", "value"]] for e in CONSUMER_ENTITIES]
+            parts.append(_as_known_combos(comps, lambda v: v[i] / sum(v)).assign(series=f"consumer_{m}_share"))
+            if kind == "count":
+                own = comps[i]
+                parts.append(own.assign(series=f"consumer_{m}_log", value=np.log(own["value"].astype(float))))
     return pd.concat([p[_OBS_COLS] for p in parts], ignore_index=True)
 
 
