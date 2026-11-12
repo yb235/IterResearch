@@ -44,8 +44,9 @@ variant (effective-pricing also takes range=1w|1m|3m|all; uptime-hourly takes id
   /api/frontend/v1/stats/throughput-comparison   per endpoint, daily p50 throughput (tok/s)     8 days, today partial
   /api/frontend/v1/stats/latency-comparison      per endpoint, daily p50 latency (ms)           8 days, today partial
   /api/frontend/v1/rankings/models               every model variant over the last day / 7 /    one rolling window ending at
-      ?view=day|week|month[&metric=spend]        30 complete days: tokens, BYOK tokens,         the last complete UTC day, plus
-                                                 requests, change vs the previous window;       `change` vs the window before
+      ?view=day|week|month                       30 complete days: tokens, BYOK tokens,         the last complete UTC day, plus
+      &metric=tokens_excl_byok|spend             requests, change vs the previous window;       `change` vs the window before
+                                                 BYOK fields are 0 unless metric=tokens_excl_byok;
                                                  metric=spend -> share of all OpenRouter spend
   /api/frontend/v1/rankings/performance          per model: p50 latency and throughput,         current only (about one day)
                                                  requests, provider count
@@ -430,19 +431,21 @@ def fetch_comparison(permaslug: str, kind: str = "throughput", variant: str = "s
 
 # --------------------------------------------------------------------------- rankings
 def parse_rankings_models(js: dict, view: str, fetched, metric: str | None = None,
-                          author: str = "anthropic") -> pd.DataFrame:
+                          author: str = "anthropic", end=None) -> pd.DataFrame:
     """/api/frontend/v1/rankings/models?view=day|week|month[&metric=spend].
 
     date = window end (latest date in the response = last complete UTC day). Per model
     variant of the author and summed over them (model 'anthropic/*'):
-      default metric: {view}_tokens, {view}_byok_tokens, {view}_requests, {view}_tokens_change
-                      (change vs the previous window, per model only)
+      metric=tokens_excl_byok (use this): {view}_tokens, {view}_byok_tokens, {view}_requests,
+                      {view}_tokens_excl_byok, {view}_tokens_excl_byok_change (vs previous window)
+      no metric:      the same token totals, but the BYOK fields are all 0 in this mode, so
+                      byok is not reported; {view}_tokens_change
       metric=spend:   {view}_spend_share (share of all OpenRouter spend in the window)."""
     fetched = _ts(fetched)
     data = js["data"]
     if not data:
         return _rows_to_df([])
-    end = max(_day(r["date"]) for r in data)
+    end = _ts(end) if end is not None else max(_day(r["date"]) for r in data)
     pub = end + DAY
     rows, tot = [], {}
     for r in data:
@@ -454,15 +457,18 @@ def parse_rankings_models(js: dict, view: str, fetched, metric: str | None = Non
             vals = {f"{view}_spend_share": r.get("rankingMetricValue")}
         else:
             vals = {f"{view}_tokens": r["total_prompt_tokens"] + r["total_completion_tokens"],
-                    f"{view}_byok_tokens": r.get("total_byok_prompt_tokens", 0) + r.get("total_byok_completion_tokens", 0),
                     f"{view}_requests": r.get("count")}
+            if metric == "tokens_excl_byok":
+                vals[f"{view}_byok_tokens"] = r.get("total_byok_prompt_tokens", 0) + r.get("total_byok_completion_tokens", 0)
+                vals[f"{view}_tokens_excl_byok"] = r.get("rankingMetricValue")
         for k, v in vals.items():
             if v is None:
                 continue
             rows.append(_r(end, m, var, "all", "all", k, v, pub, fetched, "rankings/models"))
             tot[k] = tot.get(k, 0.0) + float(v)
         if metric != "spend" and r.get("change") is not None:
-            rows.append(_r(end, m, var, "all", "all", f"{view}_tokens_change", r["change"], pub, fetched, "rankings/models"))
+            rows.append(_r(end, m, var, "all", "all", f"{view}_{metric or 'tokens'}_change", r["change"], pub, fetched,
+                           "rankings/models"))
     for k, v in tot.items():
         rows.append(_r(end, f"{author}/*", "all", "all", "all", k, v, pub, fetched, "rankings/models"))
     return _rows_to_df(rows)
@@ -519,7 +525,8 @@ def parse_rsc_series(html: str, key: str) -> list:
 
 
 def parse_daily_chart(series: list, fetched, provider: str, source: str, keep_partial: bool = False) -> pd.DataFrame:
-    """{x, ys} daily token chart -> tidy rows: one per model (incl. 'Others') and '(total)'."""
+    """{x, ys} daily token chart -> tidy rows: one per model (incl. 'Others') and '(total)'.
+    A '_total' key (saved snapshots trimmed to one author) is used as the total."""
     fetched = _ts(fetched)
     rows = []
     for pt in series:
@@ -529,8 +536,11 @@ def parse_daily_chart(series: list, fetched, provider: str, source: str, keep_pa
         pub = day + DAY if day < fetched else fetched
         total = 0.0
         for m, v in pt["ys"].items():
+            if m == "_total":
+                continue
             rows.append(_r(day, m, "all", provider, "all", "tokens", v, pub, fetched, source))
             total += float(v)
+        total = float(pt["ys"].get("_total", total))
         rows.append(_r(day, "(total)", "all", provider, "all", "tokens", total, pub, fetched, source))
     return _rows_to_df(rows)
 
@@ -573,7 +583,8 @@ def provider_shares(df: pd.DataFrame, metric: str = "tokens", source: str = "pro
 
 # --------------------------------------------------------------------------- snapshot
 def _trim_endpoint(e: dict) -> dict:
-    keep = ("id", "name", "provider_name", "provider_slug", "provider_region", "variant", "derived_service_tier",
+    keep = ("id", "name", "model_variant_permaslug", "provider_name", "provider_slug", "provider_region",
+            "variant", "derived_service_tier",
             "quantization", "status", "is_disabled", "is_deranked", "is_byok_only", "context_length",
             "max_completion_tokens", "limit_rpm", "provider_model_id", "created_at", "stats",
             "tag", "service_tier", "uptime_last_5m", "uptime_last_30m", "uptime_last_1d",
@@ -610,8 +621,145 @@ def select_models(rank_week: pd.DataFrame, top_n: int = 10, author: str = "anthr
     return list(w.sort_values("value", ascending=False).model.head(top_n))
 
 
-def _sig(x, n=6):
-    return float(f"{x:.{n}g}") if isinstance(x, float) else x
+RAW_FILES = {"stats": "claude-endpoint-stats", "pricing": "claude-effective-pricing",
+             "activity": "claude-model-activity", "capacity": "claude-capacity",
+             "provider": "provider-daily-tokens", "author": "author-daily-tokens",
+             "rankings": "rankings-models-anthropic", "performance": "rankings-performance-anthropic"}
+
+
+def fetch_raw(fetched, models: list | None = None, top_n: int = 10, providers=CLAUDE_PROVIDERS,
+              author: str = "anthropic", price_range: str = "1w", hourly: bool = False,
+              log=print) -> dict:
+    """Download everything for the author's main models; returns the trimmed raw responses
+    (the content of the snapshot's JSON files). About 8 requests per model plus ~12."""
+    fetched = _ts(fetched)
+    raw = {k: {} for k in RAW_FILES}
+    cat = parse_claude_models(_get_json("/api/v1/models"), author)
+    rank = []
+    for view, metric in (("day", "tokens_excl_byok"), ("week", "tokens_excl_byok"), ("month", "tokens_excl_byok"),
+                         ("day", "spend"), ("week", "spend")):
+        df, js = fetch_rankings_models(view, metric, fetched, author)
+        rank.append(df)
+        end = max((_day(r["date"]) for r in js["data"]), default=None)
+        raw["rankings"][view + ("_" + metric if metric else "")] = {
+            "window_end": f"{end:%Y-%m-%d}" if end is not None else None, "data": _trim_rankings(js, author)}
+    df, js = fetch_rankings_performance(fetched, author)
+    raw["performance"] = [r for r in js["data"] if r.get("author") == author]
+    if not raw["performance"]:
+        log("warning: rankings/performance returned no rows")
+    if models is None:
+        models = select_models(pd.concat(rank, ignore_index=True), top_n, author)
+    log(f"models: {models}")
+
+    for pm in models:
+        rec = cat[cat.permaslug == pm]
+        st = _get_json("/api/frontend/v1/stats/endpoint", permaslug=pm, variant="standard")
+        labels = endpoint_labels(st)
+        raw["stats"][pm] = {"stats_endpoint": [_trim_endpoint(e) for e in st["data"]]}
+        std = rec[rec.variant == "standard"]
+        if len(std):
+            v1 = _get_json(f"/api/v1/models/{std.slug.iloc[0]}/endpoints")
+            raw["stats"][pm]["v1_endpoints"] = [_trim_endpoint(e) for e in v1["data"]["endpoints"]]
+        raw["pricing"][pm] = _get_json("/api/frontend/v1/stats/effective-pricing", permaslug=pm,
+                                       variant="standard", range=price_range)["data"]
+        raw["activity"][pm] = {}
+        for var in ["standard"] + (["batch"] if (rec.variant == "batch").any() else []):
+            ma = _get_json("/api/frontend/v1/stats/model-activity", permaslug=pm, variant=var)["data"]
+            raw["activity"][pm][var] = {"cachedAt": ma.get("cachedAt"),
+                                        "analytics": [{k: r.get(k) for k in ACTIVITY_FIELDS} for r in ma["analytics"]]}
+        cap = {"endpoint_labels": labels,
+               "uptime_recent": _get_json("/api/frontend/v1/stats/uptime-recent", permaslug=pm, variant="standard")["data"]}
+        for kind in ("throughput", "latency"):
+            cap[kind] = _get_json(f"/api/frontend/v1/stats/{kind}-comparison", permaslug=pm, variant="standard")["data"]
+        if hourly:
+            cap["uptime_hourly"] = {eid: _get_json("/api/frontend/v1/stats/uptime-hourly", id=eid)["data"] for eid in labels}
+        raw["capacity"][pm] = cap
+        log(f"  {pm}: {len(labels)} endpoints")
+
+    for p in providers:
+        raw["provider"][p] = _trim_chart(parse_rsc_series(_get_text(f"/provider/{p}"), "chartData"), author)
+    raw["author"][author] = parse_rsc_series(_get_text(f"/{author}"), "data")
+    return raw
+
+
+def tidy_from_raw(raw: dict, fetched, author: str = "anthropic", providers=CLAUDE_PROVIDERS,
+                  share_models: int = 3) -> pd.DataFrame:
+    """Tidy frame (TIDY_COLS) from fetch_raw()'s output or a saved snapshot's JSON files.
+    Provider-page shares are kept for the author total and the first `share_models` models."""
+    fetched = _ts(fetched)
+    frames = []
+    for key, obj in raw.get("rankings", {}).items():
+        view, _, metric = key.partition("_")
+        rows, end = (obj["data"], obj.get("window_end")) if isinstance(obj, dict) else (obj, None)
+        frames.append(parse_rankings_models({"data": rows}, view, fetched, metric or None, author, end))
+    frames.append(parse_rankings_performance({"data": raw.get("performance") or []}, fetched, author))
+    models = list(raw.get("stats", {}))
+    for pm, st in raw.get("stats", {}).items():
+        eps = [{"model_variant_permaslug": pm, **e} for e in st.get("stats_endpoint", [])]
+        frames.append(parse_endpoint_stats({"data": eps}, fetched))
+        if st.get("v1_endpoints"):
+            v1 = parse_v1_endpoints({"data": {"endpoints": st["v1_endpoints"]}}, fetched, pm, "standard")
+            frames.append(v1[v1.metric.str.startswith(("uptime", "latency", "throughput"))])
+        cap = raw.get("capacity", {}).get(pm, {})
+        labels = cap.get("endpoint_labels") or endpoint_labels({"data": eps})
+        if pm in raw.get("pricing", {}):
+            frames.append(parse_effective_pricing({"data": raw["pricing"][pm]}, pm, "standard", fetched, labels))
+        for var, ma in raw.get("activity", {}).get(pm, {}).items():
+            frames.append(parse_model_activity({"data": ma}, fetched))
+        if "uptime_recent" in cap:
+            frames.append(parse_uptime_recent({"data": cap["uptime_recent"]}, pm, "standard", fetched, labels))
+        for kind, metric in (("throughput", "p50_throughput_daily"), ("latency", "p50_latency_ms_daily")):
+            if kind in cap:
+                frames.append(parse_comparison({"data": cap[kind]}, pm, "standard", fetched, metric, labels))
+        for eid, h in (cap.get("uptime_hourly") or {}).items():
+            frames.append(parse_uptime_hourly({"data": h}, pm, "standard", labels.get(eid, eid), fetched))
+    for p, series in raw.get("provider", {}).items():
+        frames.append(_keep_rows(parse_daily_chart(series, fetched, p, "provider page"), author))
+    for a, series in raw.get("author", {}).items():
+        frames.append(parse_daily_chart(series, fetched, "all", "author page"))
+
+    out = pd.concat([f for f in frames if len(f)], ignore_index=True)
+    page = provider_shares(out, "tokens", "provider page", author, providers)
+    shares = [page[page.model.isin(models[:share_models] + [f"{author}/*"])],
+              provider_shares(out, "tokens_recent", "stats/effective-pricing", author, providers),
+              provider_shares(out, "requests_30m", "stats/endpoint", author, providers)]
+    out = pd.concat([out] + [x for x in shares if len(x)], ignore_index=True)
+    return out.sort_values(["source", "model", "provider", "endpoint", "metric", "date"]).reset_index(drop=True)
+
+
+def save_snapshot(raw: dict, df: pd.DataFrame, fetched, out_dir: str = OUT_DIR) -> list:
+    """Write the raw JSON files and the tidy CSV, prefixed with the fetch date."""
+    tag = f"{_ts(fetched):%Y-%m-%d}"
+    os.makedirs(out_dir, exist_ok=True)
+    paths = []
+    for key, name in RAW_FILES.items():
+        path = os.path.join(out_dir, f"{tag}_{name}.json")
+        with open(path, "w") as f:
+            json.dump({"fetched": tag, "source": BASE, "data": raw.get(key, {})}, f, separators=(",", ":"))
+        paths.append(path)
+    path = os.path.join(out_dir, f"{tag}_claude_endpoints.csv")
+    save_csv(df, path)
+    return paths + [path]
+
+
+def load_raw(date, out_dir: str = OUT_DIR) -> dict:
+    """Read a saved snapshot's JSON files back into fetch_raw()'s structure."""
+    tag = f"{_ts(date):%Y-%m-%d}"
+    raw = {}
+    for key, name in RAW_FILES.items():
+        path = os.path.join(out_dir, f"{tag}_{name}.json")
+        if os.path.exists(path):
+            with open(path) as f:
+                raw[key] = json.load(f)["data"]
+    return raw
+
+
+def rebuild(date, out_dir: str = OUT_DIR, save: bool = False, **kw) -> pd.DataFrame:
+    """Re-parse a saved snapshot without network access (e.g. after a parser change)."""
+    df = tidy_from_raw(load_raw(date, out_dir), date, **kw)
+    if save:
+        save_csv(df, os.path.join(out_dir, f"{_ts(date):%Y-%m-%d}_claude_endpoints.csv"))
+    return df
 
 
 def snapshot(asof=None, out_dir: str = OUT_DIR, models: list | None = None, top_n: int = 10,
@@ -623,99 +771,22 @@ def snapshot(asof=None, out_dir: str = OUT_DIR, models: list | None = None, top_
       claude-endpoint-stats.json   stats/endpoint + v1 endpoints per model (trimmed)
       claude-effective-pricing.json, claude-model-activity.json (standard + batch),
       claude-capacity.json         uptime-recent, throughput- and latency-comparison
-      provider-daily-tokens.json   provider pages' 90-day charts
+                                   (+ uptime-hourly per endpoint if hourly=True)
+      provider-daily-tokens.json   provider pages' 90-day charts (author's models, Others, _total)
       author-daily-tokens.json     author page's 91-day chart
       rankings-models-anthropic.json, rankings-performance-anthropic.json (author's rows)
       claude_endpoints.csv         tidy rows (TIDY_COLS): provider pages trimmed to the author's
-                                   models + Others + (total); provider shares for the selected
-                                   models and the author total
-    About 8 requests per model plus ~12; one per second. Returns the tidy frame."""
+                                   models + Others + (total); provider-page shares for the author
+                                   total and the top 3 models (provider_shares() gives the rest)
+    Models default to the author's top_n standard variants by tokens in the last week.
+    About 8 requests per model plus ~12, one per second. Returns the tidy frame."""
     fetched = _ts(asof or dt.date.today())
-    tag = f"{fetched:%Y-%m-%d}"
     log = print if verbose else (lambda *a, **k: None)
-    frames, raw = [], {k: {} for k in ("stats", "pricing", "activity", "capacity", "provider", "author",
-                                         "rankings", "performance")}
-
-    cat = parse_claude_models(_get_json("/api/v1/models"), author)
-    for view, metric in (("day", None), ("week", None), ("month", None), ("day", "spend"), ("week", "spend")):
-        df, js = fetch_rankings_models(view, metric, fetched, author)
-        frames.append(df)
-        raw["rankings"][view + ("_" + metric if metric else "")] = _trim_rankings(js, author)
-    df, js = fetch_rankings_performance(fetched, author)
-    frames.append(df)
-    raw["performance"] = [r for r in js["data"] if r.get("author") == author]
-    if not len(df):
-        log("warning: rankings/performance returned no rows")
-    rank = pd.concat(frames, ignore_index=True)
-    if models is None:
-        models = select_models(rank, top_n, author)
-    log(f"models: {models}")
-
-    for pm in models:
-        rec = cat[cat.permaslug == pm]
-        st_js = _get_json("/api/frontend/v1/stats/endpoint", permaslug=pm, variant="standard")
-        labels = endpoint_labels(st_js)
-        frames.append(parse_endpoint_stats(st_js, fetched))
-        raw["stats"][pm] = {"stats_endpoint": [_trim_endpoint(e) for e in st_js["data"]]}
-        std = rec[rec.variant == "standard"]
-        if len(std):
-            v1 = _get_json(f"/api/v1/models/{std.slug.iloc[0]}/endpoints")
-            v1_df = parse_v1_endpoints(v1, fetched, pm, "standard")
-            frames.append(v1_df[v1_df.metric.str.startswith(("uptime", "latency", "throughput"))])
-            raw["stats"][pm]["v1_endpoints"] = [_trim_endpoint(e) for e in v1["data"]["endpoints"]]
-        ep_js = _get_json("/api/frontend/v1/stats/effective-pricing", permaslug=pm, variant="standard", range=price_range)
-        frames.append(parse_effective_pricing(ep_js, pm, "standard", fetched, labels))
-        raw["pricing"][pm] = ep_js["data"]
-        raw["activity"][pm] = {}
-        for var in ["standard"] + (["batch"] if (rec.variant == "batch").any() else []):
-            ma = _get_json("/api/frontend/v1/stats/model-activity", permaslug=pm, variant=var)
-            frames.append(parse_model_activity(ma, fetched))
-            raw["activity"][pm][var] = {"cachedAt": ma["data"].get("cachedAt"),
-                                        "analytics": [{k: r.get(k) for k in ACTIVITY_FIELDS}
-                                                      for r in ma["data"]["analytics"]]}
-        cap = {}
-        cap["uptime_recent"] = _get_json("/api/frontend/v1/stats/uptime-recent", permaslug=pm, variant="standard")["data"]
-        frames.append(parse_uptime_recent({"data": cap["uptime_recent"]}, pm, "standard", fetched, labels))
-        for kind, metric in (("throughput", "p50_throughput_daily"), ("latency", "p50_latency_ms_daily")):
-            cap[kind] = _get_json(f"/api/frontend/v1/stats/{kind}-comparison", permaslug=pm, variant="standard")["data"]
-            frames.append(parse_comparison({"data": cap[kind]}, pm, "standard", fetched, metric, labels))
-        if hourly:
-            cap["uptime_hourly"] = {}
-            for eid, ep in labels.items():
-                h = _get_json("/api/frontend/v1/stats/uptime-hourly", id=eid)
-                cap["uptime_hourly"][eid] = h["data"]
-                frames.append(parse_uptime_hourly(h, pm, "standard", ep, fetched))
-        cap["endpoint_labels"] = labels
-        raw["capacity"][pm] = cap
-        log(f"  {pm}: {len(labels)} endpoints")
-
-    for p in providers:
-        df, series = fetch_provider_chart(p, fetched)
-        frames.append(_keep_rows(df, author))
-        raw["provider"][p] = _trim_chart(series, author)
-    df, series = fetch_author_chart(author, fetched)
-    frames.append(df)
-    raw["author"][author] = series
-
-    out = pd.concat([f for f in frames if len(f)], ignore_index=True)
-    page = provider_shares(out, "tokens", "provider page", author, providers)
-    shares = [page[page.model.isin(list(models) + [f"{author}/*"])],
-              provider_shares(out, "tokens_recent", "stats/effective-pricing", author, providers),
-              provider_shares(out, "requests_30m", "stats/endpoint", author, providers)]
-    out = pd.concat([out] + [s for s in shares if len(s)], ignore_index=True)
-    out = out.sort_values(["source", "model", "provider", "endpoint", "metric", "date"]).reset_index(drop=True)
-
+    raw = fetch_raw(fetched, models, top_n, providers, author, price_range, hourly, log)
+    out = tidy_from_raw(raw, fetched, author, providers)
     if save:
-        os.makedirs(out_dir, exist_ok=True)
-        files = {"claude-endpoint-stats": raw["stats"], "claude-effective-pricing": raw["pricing"],
-                 "claude-model-activity": raw["activity"], "claude-capacity": raw["capacity"],
-                 "provider-daily-tokens": raw["provider"], "author-daily-tokens": raw["author"],
-                 f"rankings-models-{author}": raw["rankings"], f"rankings-performance-{author}": raw["performance"]}
-        for name, obj in files.items():
-            with open(os.path.join(out_dir, f"{tag}_{name}.json"), "w") as f:
-                json.dump({"fetched": tag, "source": BASE, "data": obj}, f, separators=(",", ":"))
-        save_csv(out, os.path.join(out_dir, f"{tag}_claude_endpoints.csv"))
-        log(f"saved {len(out)} rows and {len(files)} raw files to {out_dir}")
+        paths = save_snapshot(raw, out, fetched, out_dir)
+        log(f"saved {len(out)} rows and {len(paths) - 1} raw files to {out_dir}")
     return out
 
 
@@ -725,8 +796,7 @@ def save_csv(df: pd.DataFrame, path: str) -> None:
         t = pd.to_datetime(d[c])
         d[c] = t.dt.strftime("%Y-%m-%d").where(t == t.dt.normalize(), t.dt.strftime("%Y-%m-%d %H:%M"))
     d["fetched"] = pd.to_datetime(d["fetched"]).dt.strftime("%Y-%m-%d")
-    d["value"] = d["value"].map(_sig)
-    d[TIDY_COLS].to_csv(path, index=False)
+    d[TIDY_COLS].to_csv(path, index=False, float_format="%.6g")
 
 
 def load_csv(path: str) -> pd.DataFrame:
