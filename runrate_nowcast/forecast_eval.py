@@ -98,6 +98,16 @@ def collect(asof: str = "2026-11-10", reports_dir: str = config.OUTPUT_DIR) -> p
                 rows.append({"rule": rule, "model": name, "target": r.target, "metric": r.metric,
                              "vintage": r.vintage, "actual": act, "forecast": act / math.exp(r.log_err),
                              "log_err": r.log_err, "z": np.nan})
+        f = os.path.join(reports_dir, f"forecast_panel_{rule}_{asof}.csv")
+        if os.path.exists(f):                      # pooled two-company panel models (panel_model.py), Anthropic targets
+            pm = pd.read_csv(f)
+            if "company" in pm:
+                pm = pm[pm.company.astype(str).str.lower().str.startswith("anth")]
+            pm = pm[pm.model.astype(str).str.startswith("panel ")]
+            for r in pm.itertuples():
+                rows.append({"rule": rule, "model": f"P {r.model}", "target": r.target, "metric": r.metric,
+                             "vintage": r.vintage, "actual": r.actual, "forecast": r.forecast,
+                             "log_err": r.log_err, "z": np.nan})
     d = pd.DataFrame(rows)
     # Ensemble, defined before its results were seen: equal-weight mean of log forecasts of the
     # all-signal state-space model (x price) and the two all-signal ML ridge models.
