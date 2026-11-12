@@ -34,8 +34,10 @@ variant (effective-pricing also takes range=1w|1m|3m|all; uptime-hourly takes id
                                                  request_count in the window, price, status
   /api/frontend/v1/stats/effective-pricing       per endpoint: tokens over a recent window      summary: current only;
                                                  (undocumented, roughly one day, rolling),      daily price chart: since the
-                                                 effective $/M input and output, cache-hit      model's launch with range=all
-                                                 rate; daily effective input $/M per endpoint   (8 days by default)
+                                                 effective $/M input and output, cache-hit      launch with range=all, capped
+                                                 rate; daily effective input $/M per endpoint   (~294 days: Sonnet 4.5 starts
+                                                                                                2026-01-23); 1m = 32 days;
+                                                                                                default 1w = 8 days
   /api/frontend/v1/stats/model-activity          per model variant, daily: prompt, completion,  rolling 31 days, today partial
                                                  reasoning, cached and BYOK tokens, requests,
                                                  tool calls (range is ignored)
@@ -342,7 +344,7 @@ def parse_model_activity(js: dict, fetched, keep_partial: bool = False, full: bo
         if day >= fetched and not keep_partial:
             continue
         pub = day + DAY if day < fetched else fetched
-        m, var = r.get("variant_permaslug") or r["model_permaslug"], r.get("variant", "standard")
+        m, var = r["model_permaslug"], r.get("variant", "standard")
         vals = {"tokens": r.get("total_prompt_tokens", 0) + r.get("total_completion_tokens", 0)}
         for k, cols in {**ACTIVITY_METRICS, **(ACTIVITY_EXTRA if full else {})}.items():
             vals[k] = sum(r.get(c) or 0 for c in cols)
@@ -565,7 +567,8 @@ def provider_shares(df: pd.DataFrame, metric: str = "tokens", source: str = "pro
     Works on provider-page rows (metric 'tokens'), effective-pricing rows ('tokens_recent')
     or stats/endpoint rows ('requests_30m'). Also returns the author total over all its
     models (model 'anthropic/*'). Output metric: '{metric}_provider_share'; provider
-    google-vertex and azure are lower bounds for provider-page data (Claude in 'Others')."""
+    google-vertex and azure are lower bounds for provider-page data (Claude in 'Others').
+    CHANNEL maps providers to who sells the tokens."""
     d = df[(df.metric == metric) & (df.source == source) & df.provider.isin(providers)
            & df.model.map(lambda m: _is_author(m, author))]
     if not len(d):
@@ -783,7 +786,7 @@ def snapshot(asof=None, out_dir: str = OUT_DIR, models: list | None = None, top_
     fetched = _ts(asof or dt.date.today())
     log = print if verbose else (lambda *a, **k: None)
     raw = fetch_raw(fetched, models, top_n, providers, author, price_range, hourly, log)
-    out = tidy_from_raw(raw, fetched, author, providers)
+    out = tidy_from_raw(raw, fetched, author)     # shares always over all CLAUDE_PROVIDERS
     if save:
         paths = save_snapshot(raw, out, fetched, out_dir)
         log(f"saved {len(out)} rows and {len(paths) - 1} raw files to {out_dir}")

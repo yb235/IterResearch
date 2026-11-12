@@ -1,0 +1,827 @@
+{
+ "models": {
+  "data": [
+   {
+    "id": "openai/gpt-6-luna",
+    "canonical_slug": "openai/gpt-6-luna-20260922",
+    "created": 1790100786,
+    "pricing": {
+     "prompt": "0.0000001",
+     "completion": "0.0000005"
+    },
+    "name": "OpenAI: GPT-6 Luna"
+   },
+   {
+    "id": "anthropic/claude-opus-5.5",
+    "canonical_slug": "anthropic/claude-opus-5.5-20260921",
+    "created": 1790094732,
+    "pricing": {
+     "prompt": "0.000004",
+     "completion": "0.00002"
+    },
+    "name": "Anthropic: Claude Opus 5.5"
+   },
+   {
+    "id": "anthropic/claude-opus-5.5:batch",
+    "canonical_slug": "anthropic/claude-opus-5.5-20260921",
+    "created": 1790094732,
+    "pricing": {
+     "prompt": "0.000002",
+     "completion": "0.00001"
+    },
+    "name": "Anthropic: Claude Opus 5.5 (batch)"
+   }
+  ]
+ },
+ "v1_endpoints": {
+  "data": {
+   "id": "anthropic/claude-opus-5.5",
+   "endpoints": [
+    {
+     "name": "Anthropic | anthropic/claude-opus-5.5-20260921",
+     "model_id": "anthropic/claude-opus-5.5",
+     "provider_name": "Anthropic",
+     "tag": "anthropic",
+     "status": 0,
+     "uptime_last_5m": 100,
+     "uptime_last_30m": 100,
+     "uptime_last_1d": 100,
+     "latency_last_30m": null,
+     "throughput_last_30m": null,
+     "quantization": "unknown",
+     "service_tier": null,
+     "pricing": {
+      "prompt": "0.000004",
+      "completion": "0.00002",
+      "input_cache_read": "0.0000002"
+     }
+    },
+    {
+     "name": "Amazon Bedrock | anthropic/claude-opus-5.5-20260921",
+     "model_id": "anthropic/claude-opus-5.5",
+     "provider_name": "Amazon Bedrock",
+     "tag": "amazon-bedrock/us-east-1",
+     "status": 0,
+     "uptime_last_5m": 100,
+     "uptime_last_30m": 100,
+     "uptime_last_1d": 100,
+     "latency_last_30m": null,
+     "throughput_last_30m": null,
+     "quantization": "unknown",
+     "service_tier": null,
+     "pricing": {
+      "prompt": "0.0000044",
+      "completion": "0.000022",
+      "input_cache_read": "0.00000022"
+     }
+    },
+    {
+     "name": "Azure | anthropic/claude-opus-5.5-20260921",
+     "model_id": "anthropic/claude-opus-5.5",
+     "provider_name": "Azure",
+     "tag": "azure/us",
+     "status": 0,
+     "uptime_last_5m": null,
+     "uptime_last_30m": null,
+     "uptime_last_1d": null,
+     "latency_last_30m": null,
+     "throughput_last_30m": null,
+     "quantization": "unknown",
+     "service_tier": null,
+     "pricing": {
+      "prompt": "0.0000044",
+      "completion": "0.000022",
+      "input_cache_read": "0.00000022"
+     }
+    }
+   ]
+  }
+ },
+ "stats_endpoint": {
+  "data": [
+   {
+    "id": "043a453c-8450-4da8-82c1-cf6cc19cba9e",
+    "provider_name": "Anthropic",
+    "provider_slug": "anthropic",
+    "provider_region": null,
+    "variant": "standard",
+    "status": 0,
+    "stats": {
+     "p50_latency": 2629,
+     "p90_latency": 4768.600000000002,
+     "p99_latency": 13600.250000000004,
+     "p50_throughput": 83,
+     "p90_throughput": 45,
+     "mean_latency": 3051.48469357142,
+     "request_count": 83331,
+     "window_minutes": 30
+    },
+    "pricing": {
+     "prompt": "0.000004",
+     "completion": "0.00002",
+     "input_cache_read": "0.0000002",
+     "input_cache_write": "0.000005",
+     "discount": 0
+    },
+    "model_variant_permaslug": "anthropic/claude-opus-5.5-20260921"
+   },
+   {
+    "id": "a24cd509-61a3-47ae-acea-41b4b40e6645",
+    "provider_name": "Google",
+    "provider_slug": "google-vertex/global",
+    "provider_region": "global",
+    "variant": "standard",
+    "status": 0,
+    "stats": {
+     "p50_latency": 2844.5,
+     "p90_latency": 7558.600000000002,
+     "p99_latency": 21705.800000000003,
+     "p50_throughput": 84,
+     "p90_throughput": 50,
+     "mean_latency": 4070.627540173053,
+     "request_count": 20225,
+     "window_minutes": 30
+    },
+    "pricing": {
+     "prompt": "0.000004",
+     "completion": "0.00002",
+     "input_cache_read": "0.0000002",
+     "input_cache_write": "0.000005",
+     "discount": 0
+    },
+    "model_variant_permaslug": "anthropic/claude-opus-5.5-20260921"
+   },
+   {
+    "id": "6d76a7f6-28bc-4af6-9ae1-9b12caeb9549",
+    "provider_name": "Amazon Bedrock",
+    "provider_slug": "amazon-bedrock/us-east-1",
+    "provider_region": "us-east-1",
+    "variant": "standard",
+    "status": 0,
+    "stats": {
+     "p50_latency": 3691,
+     "p90_latency": 6618,
+     "p99_latency": 20050.400000000052,
+     "p50_throughput": 70,
+     "p90_throughput": 34,
+     "mean_latency": 4309.464237516869,
+     "request_count": 741,
+     "window_minutes": 30
+    },
+    "pricing": {
+     "prompt": "0.0000044",
+     "completion": "0.000022",
+     "input_cache_read": "0.00000022",
+     "input_cache_write": "0.0000055",
+     "discount": 0
+    },
+    "model_variant_permaslug": "anthropic/claude-opus-5.5-20260921"
+   }
+  ]
+ },
+ "effective_pricing": {
+  "data": {
+   "weightedInputPrice": 0.7447587097920407,
+   "weightedOutputPrice": 20.222826572784815,
+   "weightedCacheHitRate": 0.8860219462792992,
+   "providerSummaries": [
+    {
+     "endpointId": "043a453c-8450-4da8-82c1-cf6cc19cba9e",
+     "providerName": "Anthropic (1)",
+     "providerSlug": "anthropic",
+     "effectiveInputPrice": 0.8691221873831078,
+     "effectiveOutputPrice": 20,
+     "cacheHitRate": 0.8806520951493008,
+     "totalTokens": 194697190217
+    },
+    {
+     "endpointId": "a24cd509-61a3-47ae-acea-41b4b40e6645",
+     "providerName": "Google Vertex (3)",
+     "providerSlug": "google-vertex",
+     "effectiveInputPrice": 0.7440257968143276,
+     "effectiveOutputPrice": 20,
+     "cacheHitRate": 0.8772742091508213,
+     "totalTokens": 76131863909
+    },
+    {
+     "endpointId": "63e63e3b-11cb-4a56-9016-cf01592a72a8",
+     "providerName": "Azure (2)",
+     "providerSlug": "azure",
+     "effectiveInputPrice": 1.1912722554320736,
+     "effectiveOutputPrice": 20,
+     "cacheHitRate": 0.7788757506994106,
+     "totalTokens": 3249538870
+    },
+    {
+     "endpointId": "6d76a7f6-28bc-4af6-9ae1-9b12caeb9549",
+     "providerName": "Amazon Bedrock (1)",
+     "providerSlug": "amazon-bedrock",
+     "effectiveInputPrice": 0.703236462547999,
+     "effectiveOutputPrice": 22,
+     "cacheHitRate": 0.9075731960243735,
+     "totalTokens": 1736322724
+    }
+   ],
+   "endpointProviderSlugs": {
+    "043a453c-8450-4da8-82c1-cf6cc19cba9e": "anthropic",
+    "63e63e3b-11cb-4a56-9016-cf01592a72a8": "azure",
+    "a24cd509-61a3-47ae-acea-41b4b40e6645": "google-vertex",
+    "6d76a7f6-28bc-4af6-9ae1-9b12caeb9549": "amazon-bedrock"
+   },
+   "inputChartData": [
+    {
+     "x": "2026-11-10 00:00:00",
+     "y": {
+      "63e63e3b-11cb-4a56-9016-cf01592a72a8": 1.3870850055247361,
+      "6d76a7f6-28bc-4af6-9ae1-9b12caeb9549": 0.7828576595848132,
+      "043a453c-8450-4da8-82c1-cf6cc19cba9e": 0.8164197650087335,
+      "a24cd509-61a3-47ae-acea-41b4b40e6645": 1.2001454283147015
+     }
+    },
+    {
+     "x": "2026-11-11 00:00:00",
+     "y": {
+      "043a453c-8450-4da8-82c1-cf6cc19cba9e": 0.8516782556483989,
+      "a24cd509-61a3-47ae-acea-41b4b40e6645": 0.7856205357812167,
+      "63e63e3b-11cb-4a56-9016-cf01592a72a8": 1.557471654788712,
+      "6d76a7f6-28bc-4af6-9ae1-9b12caeb9549": 0.6877535882432203
+     }
+    },
+    {
+     "x": "2026-11-12 00:00:00",
+     "y": {
+      "043a453c-8450-4da8-82c1-cf6cc19cba9e": 0.8691221873831078,
+      "a24cd509-61a3-47ae-acea-41b4b40e6645": 0.7440257968143276,
+      "63e63e3b-11cb-4a56-9016-cf01592a72a8": 1.1912722554320736,
+      "6d76a7f6-28bc-4af6-9ae1-9b12caeb9549": 0.703236462547999
+     }
+    }
+   ],
+   "outputChartData": []
+  }
+ },
+ "model_activity": {
+  "data": {
+   "cachedAt": 1794489801893,
+   "analytics": [
+    {
+     "date": "2026-11-10 00:00:00",
+     "model_permaslug": "anthropic/claude-opus-5.5-20260921",
+     "variant": "standard",
+     "variant_permaslug": "anthropic/claude-opus-5.5-20260921",
+     "count": 9431351,
+     "total_prompt_tokens": 1103665603310,
+     "total_completion_tokens": 9786676444,
+     "total_native_tokens_reasoning": 4874456362,
+     "total_native_tokens_cached": 966487363708,
+     "total_byok_prompt_tokens": 401171540426,
+     "total_byok_completion_tokens": 2771888216,
+     "total_tool_calls": 5709597,
+     "requests_with_tool_call_errors": 30821,
+     "num_media_prompt": 12538546
+    },
+    {
+     "date": "2026-11-11 00:00:00",
+     "model_permaslug": "anthropic/claude-opus-5.5-20260921",
+     "variant": "standard",
+     "variant_permaslug": "anthropic/claude-opus-5.5-20260921",
+     "count": 9579098,
+     "total_prompt_tokens": 1032515081925,
+     "total_completion_tokens": 9352625914,
+     "total_native_tokens_reasoning": 4685799552,
+     "total_native_tokens_cached": 925490140523,
+     "total_byok_prompt_tokens": 353198979764,
+     "total_byok_completion_tokens": 2558795771,
+     "total_tool_calls": 5478139,
+     "requests_with_tool_call_errors": 26775,
+     "num_media_prompt": 11267790
+    },
+    {
+     "date": "2026-11-12 00:00:00",
+     "model_permaslug": "anthropic/claude-opus-5.5-20260921",
+     "variant": "standard",
+     "variant_permaslug": "anthropic/claude-opus-5.5-20260921",
+     "count": 5353847,
+     "total_prompt_tokens": 602948867265,
+     "total_completion_tokens": 5387359641,
+     "total_native_tokens_reasoning": 2648809709,
+     "total_native_tokens_cached": 533333771643,
+     "total_byok_prompt_tokens": 158212944994,
+     "total_byok_completion_tokens": 1220946247,
+     "total_tool_calls": 3127868,
+     "requests_with_tool_call_errors": 15763,
+     "num_media_prompt": 7889989
+    }
+   ]
+  }
+ },
+ "uptime_recent": {
+  "data": {
+   "043a453c-8450-4da8-82c1-cf6cc19cba9e": [
+    {
+     "date": "2026-11-12 00:00:00",
+     "uptime": 100,
+     "judgedMinutes": 1038
+    },
+    {
+     "date": "2026-11-11 00:00:00",
+     "uptime": 100,
+     "judgedMinutes": 1440
+    },
+    {
+     "date": "2026-11-10 00:00:00",
+     "uptime": 100,
+     "judgedMinutes": 1440
+    }
+   ],
+   "6d76a7f6-28bc-4af6-9ae1-9b12caeb9549": [
+    {
+     "date": "2026-11-12 00:00:00",
+     "uptime": 100,
+     "judgedMinutes": 562
+    },
+    {
+     "date": "2026-11-11 00:00:00",
+     "uptime": 100,
+     "judgedMinutes": 991
+    },
+    {
+     "date": "2026-11-10 00:00:00",
+     "uptime": 100,
+     "judgedMinutes": 730
+    }
+   ],
+   "a24cd509-61a3-47ae-acea-41b4b40e6645": [
+    {
+     "date": "2026-11-12 00:00:00",
+     "uptime": 100,
+     "judgedMinutes": 1038
+    },
+    {
+     "date": "2026-11-11 00:00:00",
+     "uptime": 100,
+     "judgedMinutes": 1440
+    },
+    {
+     "date": "2026-11-10 00:00:00",
+     "uptime": 100,
+     "judgedMinutes": 1440
+    }
+   ],
+   "openrouter": [
+    {
+     "date": "2026-11-12 00:00:00",
+     "uptime": 100,
+     "judgedMinutes": 1038
+    },
+    {
+     "date": "2026-11-11 00:00:00",
+     "uptime": 100,
+     "judgedMinutes": 1440
+    },
+    {
+     "date": "2026-11-10 00:00:00",
+     "uptime": 100,
+     "judgedMinutes": 1440
+    }
+   ],
+   "13a61a2a-0780-4d52-98fa-2ab4b60e3afb": [
+    {
+     "date": "2026-11-12 00:00:00",
+     "uptime": null,
+     "judgedMinutes": 0
+    },
+    {
+     "date": "2026-11-11 00:00:00",
+     "uptime": null,
+     "judgedMinutes": 0
+    },
+    {
+     "date": "2026-11-10 00:00:00",
+     "uptime": null,
+     "judgedMinutes": 0
+    }
+   ]
+  }
+ },
+ "throughput_comparison": {
+  "data": [
+   {
+    "x": "2026-11-10",
+    "y": {
+     "043a453c-8450-4da8-82c1-cf6cc19cba9e": 80,
+     "6d76a7f6-28bc-4af6-9ae1-9b12caeb9549": 63,
+     "a24cd509-61a3-47ae-acea-41b4b40e6645": 83
+    }
+   },
+   {
+    "x": "2026-11-11",
+    "y": {
+     "043a453c-8450-4da8-82c1-cf6cc19cba9e": 82,
+     "6d76a7f6-28bc-4af6-9ae1-9b12caeb9549": 68,
+     "a24cd509-61a3-47ae-acea-41b4b40e6645": 82
+    }
+   },
+   {
+    "x": "2026-11-12",
+    "y": {
+     "043a453c-8450-4da8-82c1-cf6cc19cba9e": 81,
+     "6d76a7f6-28bc-4af6-9ae1-9b12caeb9549": 70,
+     "a24cd509-61a3-47ae-acea-41b4b40e6645": 82
+    }
+   }
+  ]
+ },
+ "latency_comparison": {
+  "data": [
+   {
+    "x": "2026-11-10",
+    "y": {
+     "043a453c-8450-4da8-82c1-cf6cc19cba9e": 2686,
+     "6d76a7f6-28bc-4af6-9ae1-9b12caeb9549": 3796,
+     "a24cd509-61a3-47ae-acea-41b4b40e6645": 3429
+    }
+   },
+   {
+    "x": "2026-11-11",
+    "y": {
+     "043a453c-8450-4da8-82c1-cf6cc19cba9e": 2683,
+     "6d76a7f6-28bc-4af6-9ae1-9b12caeb9549": 3932,
+     "a24cd509-61a3-47ae-acea-41b4b40e6645": 3271
+    }
+   },
+   {
+    "x": "2026-11-12",
+    "y": {
+     "043a453c-8450-4da8-82c1-cf6cc19cba9e": 2687,
+     "6d76a7f6-28bc-4af6-9ae1-9b12caeb9549": 3753,
+     "a24cd509-61a3-47ae-acea-41b4b40e6645": 3112
+    }
+   }
+  ]
+ },
+ "uptime_hourly": {
+  "data": {
+   "history": [
+    {
+     "date": "2026-11-12 16:00:00",
+     "uptime": 100,
+     "judgedMinutes": 53
+    },
+    {
+     "date": "2026-11-12 15:00:00",
+     "uptime": 100,
+     "judgedMinutes": 60
+    },
+    {
+     "date": "2026-11-12 14:00:00",
+     "uptime": 100,
+     "judgedMinutes": 60
+    }
+   ]
+  }
+ },
+ "rankings_models_week": {
+  "data": [
+   {
+    "date": "2026-11-11 00:00:00",
+    "model_permaslug": "anthropic/claude-haiku-5.5-20261007",
+    "variant": "standard",
+    "total_completion_tokens": 152873084099,
+    "total_prompt_tokens": 2628289083183,
+    "total_native_tokens_reasoning": 0,
+    "count": 220617876,
+    "num_media_prompt": 0,
+    "num_media_completion": 0,
+    "image_output_requests": 0,
+    "num_video_prompt": 0,
+    "video_output_seconds": 0,
+    "rerank_documents": 0,
+    "stt_transcript_characters": 0,
+    "num_audio_prompt": 0,
+    "total_native_tokens_cached": 0,
+    "total_tool_calls": 0,
+    "requests_with_tool_call_errors": 0,
+    "total_byok_prompt_tokens": 370890378630,
+    "total_byok_completion_tokens": 16428390726,
+    "variant_permaslug": "anthropic/claude-haiku-5.5-20261007",
+    "change": -0.056754447399153675,
+    "rankingMetricValue": 2393843397926
+   },
+   {
+    "date": "2026-11-11 00:00:00",
+    "model_permaslug": "anthropic/claude-opus-5.5-20260921",
+    "variant": "standard",
+    "total_completion_tokens": 61040720955,
+    "total_prompt_tokens": 6587635524510,
+    "total_native_tokens_reasoning": 0,
+    "count": 56827510,
+    "num_media_prompt": 0,
+    "num_media_completion": 0,
+    "image_output_requests": 0,
+    "num_video_prompt": 0,
+    "video_output_seconds": 0,
+    "rerank_documents": 0,
+    "stt_transcript_characters": 0,
+    "num_audio_prompt": 0,
+    "total_native_tokens_cached": 0,
+    "total_tool_calls": 0,
+    "requests_with_tool_call_errors": 0,
+    "total_byok_prompt_tokens": 2219055321130,
+    "total_byok_completion_tokens": 15470157516,
+    "variant_permaslug": "anthropic/claude-opus-5.5-20260921",
+    "change": -0.10353481545099384,
+    "rankingMetricValue": 4414150766819
+   },
+   {
+    "date": "2026-11-11 00:00:00",
+    "model_permaslug": "anthropic/claude-opus-5.5-20260921",
+    "variant": "batch",
+    "total_completion_tokens": 300997246,
+    "total_prompt_tokens": 2403025363,
+    "total_native_tokens_reasoning": 0,
+    "count": 344156,
+    "num_media_prompt": 0,
+    "num_media_completion": 0,
+    "image_output_requests": 0,
+    "num_video_prompt": 0,
+    "video_output_seconds": 0,
+    "rerank_documents": 0,
+    "stt_transcript_characters": 0,
+    "num_audio_prompt": 0,
+    "total_native_tokens_cached": 0,
+    "total_tool_calls": 0,
+    "requests_with_tool_call_errors": 0,
+    "total_byok_prompt_tokens": 110960579,
+    "total_byok_completion_tokens": 48078452,
+    "variant_permaslug": "anthropic/claude-opus-5.5-20260921:batch",
+    "change": -0.20534764369766226,
+    "rankingMetricValue": 2544983578
+   },
+   {
+    "date": "2026-11-11 00:00:00",
+    "model_permaslug": "anthropic/claude-haiku-5.5-20261007",
+    "variant": "batch",
+    "total_completion_tokens": 4038667037,
+    "total_prompt_tokens": 19964676330,
+    "total_native_tokens_reasoning": 0,
+    "count": 4511498,
+    "num_media_prompt": 0,
+    "num_media_completion": 0,
+    "image_output_requests": 0,
+    "num_video_prompt": 0,
+    "video_output_seconds": 0,
+    "rerank_documents": 0,
+    "stt_transcript_characters": 0,
+    "num_audio_prompt": 0,
+    "total_native_tokens_cached": 0,
+    "total_tool_calls": 0,
+    "requests_with_tool_call_errors": 0,
+    "total_byok_prompt_tokens": 9601533068,
+    "total_byok_completion_tokens": 1532957886,
+    "variant_permaslug": "anthropic/claude-haiku-5.5-20261007:batch",
+    "change": -0.43572318616764233,
+    "rankingMetricValue": 12868852413
+   },
+   {
+    "date": "2026-11-11 00:00:00",
+    "model_permaslug": "openai/gpt-image-2.6-sunburst-20261104",
+    "variant": "standard",
+    "total_completion_tokens": 558369661,
+    "total_prompt_tokens": 736241741,
+    "total_native_tokens_reasoning": 0,
+    "count": 327011,
+    "num_media_prompt": 0,
+    "num_media_completion": 0,
+    "image_output_requests": 0,
+    "num_video_prompt": 0,
+    "video_output_seconds": 0,
+    "rerank_documents": 0,
+    "stt_transcript_characters": 0,
+    "num_audio_prompt": 0,
+    "total_native_tokens_cached": 0,
+    "total_tool_calls": 0,
+    "requests_with_tool_call_errors": 0,
+    "total_byok_prompt_tokens": 43409617,
+    "total_byok_completion_tokens": 33826430,
+    "variant_permaslug": "openai/gpt-image-2.6-sunburst-20261104",
+    "change": null,
+    "rankingMetricValue": 1217375355
+   },
+   {
+    "date": "2026-11-06 00:00:00",
+    "model_permaslug": "anthropic/claude-4.5-haiku-20251001",
+    "variant": "batch",
+    "total_completion_tokens": 25983899,
+    "total_prompt_tokens": 2662676,
+    "total_native_tokens_reasoning": 0,
+    "count": 7931,
+    "num_media_prompt": 0,
+    "num_media_completion": 0,
+    "image_output_requests": 0,
+    "num_video_prompt": 0,
+    "video_output_seconds": 0,
+    "rerank_documents": 0,
+    "stt_transcript_characters": 0,
+    "num_audio_prompt": 0,
+    "total_native_tokens_cached": 0,
+    "total_tool_calls": 0,
+    "requests_with_tool_call_errors": 0,
+    "total_byok_prompt_tokens": 2662676,
+    "total_byok_completion_tokens": 25983899,
+    "variant_permaslug": "anthropic/claude-4.5-haiku-20251001:batch",
+    "change": null,
+    "rankingMetricValue": 0
+   }
+  ]
+ },
+ "rankings_models_week_spend": {
+  "data": [
+   {
+    "date": "2026-11-11 00:00:00",
+    "model_permaslug": "anthropic/claude-opus-5.5-20260921",
+    "variant": "standard",
+    "total_completion_tokens": 61040720955,
+    "total_prompt_tokens": 6587635524510,
+    "total_native_tokens_reasoning": 0,
+    "count": 56827510,
+    "num_media_prompt": 0,
+    "num_media_completion": 0,
+    "image_output_requests": 0,
+    "num_video_prompt": 0,
+    "video_output_seconds": 0,
+    "rerank_documents": 0,
+    "stt_transcript_characters": 0,
+    "num_audio_prompt": 0,
+    "total_native_tokens_cached": 0,
+    "total_tool_calls": 0,
+    "requests_with_tool_call_errors": 0,
+    "total_byok_prompt_tokens": 0,
+    "total_byok_completion_tokens": 0,
+    "variant_permaslug": "anthropic/claude-opus-5.5-20260921",
+    "change": -0.0007195723976152872,
+    "rankingMetricValue": 0.15235538773578983
+   },
+   {
+    "date": "2026-11-11 00:00:00",
+    "model_permaslug": "anthropic/claude-haiku-5.5-20261007",
+    "variant": "standard",
+    "total_completion_tokens": 152873084099,
+    "total_prompt_tokens": 2628289083183,
+    "total_native_tokens_reasoning": 0,
+    "count": 220617876,
+    "num_media_prompt": 0,
+    "num_media_completion": 0,
+    "image_output_requests": 0,
+    "num_video_prompt": 0,
+    "video_output_seconds": 0,
+    "rerank_documents": 0,
+    "stt_transcript_characters": 0,
+    "num_audio_prompt": 0,
+    "total_native_tokens_cached": 0,
+    "total_tool_calls": 0,
+    "requests_with_tool_call_errors": 0,
+    "total_byok_prompt_tokens": 0,
+    "total_byok_completion_tokens": 0,
+    "variant_permaslug": "anthropic/claude-haiku-5.5-20261007",
+    "change": -0.022605348298752385,
+    "rankingMetricValue": 0.00998342139931521
+   },
+   {
+    "date": "2026-11-11 00:00:00",
+    "model_permaslug": "anthropic/claude-opus-5.5-20260921",
+    "variant": "batch",
+    "total_completion_tokens": 300997246,
+    "total_prompt_tokens": 2403025363,
+    "total_native_tokens_reasoning": 0,
+    "count": 344156,
+    "num_media_prompt": 0,
+    "num_media_completion": 0,
+    "image_output_requests": 0,
+    "num_video_prompt": 0,
+    "video_output_seconds": 0,
+    "rerank_documents": 0,
+    "stt_transcript_characters": 0,
+    "num_audio_prompt": 0,
+    "total_native_tokens_cached": 0,
+    "total_tool_calls": 0,
+    "requests_with_tool_call_errors": 0,
+    "total_byok_prompt_tokens": 0,
+    "total_byok_completion_tokens": 0,
+    "variant_permaslug": "anthropic/claude-opus-5.5-20260921:batch",
+    "change": -0.3680856466830614,
+    "rankingMetricValue": 0.00021739547169326314
+   },
+   {
+    "date": "2026-11-11 00:00:00",
+    "model_permaslug": "anthropic/claude-haiku-5.5-20261007",
+    "variant": "batch",
+    "total_completion_tokens": 4038667037,
+    "total_prompt_tokens": 19964676330,
+    "total_native_tokens_reasoning": 0,
+    "count": 4511498,
+    "num_media_prompt": 0,
+    "num_media_completion": 0,
+    "image_output_requests": 0,
+    "num_video_prompt": 0,
+    "video_output_seconds": 0,
+    "rerank_documents": 0,
+    "stt_transcript_characters": 0,
+    "num_audio_prompt": 0,
+    "total_native_tokens_cached": 0,
+    "total_tool_calls": 0,
+    "requests_with_tool_call_errors": 0,
+    "total_byok_prompt_tokens": 0,
+    "total_byok_completion_tokens": 0,
+    "variant_permaslug": "anthropic/claude-haiku-5.5-20261007:batch",
+    "change": -0.36978391981558184,
+    "rankingMetricValue": 4.046378719211439e-05
+   },
+   {
+    "date": "2026-11-11 00:00:00",
+    "model_permaslug": "openai/gpt-image-2.6-sunburst-20261104",
+    "variant": "standard",
+    "total_completion_tokens": 558369661,
+    "total_prompt_tokens": 736241741,
+    "total_native_tokens_reasoning": 0,
+    "count": 327011,
+    "num_media_prompt": 0,
+    "num_media_completion": 0,
+    "image_output_requests": 0,
+    "num_video_prompt": 0,
+    "video_output_seconds": 0,
+    "rerank_documents": 0,
+    "stt_transcript_characters": 0,
+    "num_audio_prompt": 0,
+    "total_native_tokens_cached": 0,
+    "total_tool_calls": 0,
+    "requests_with_tool_call_errors": 0,
+    "total_byok_prompt_tokens": 0,
+    "total_byok_completion_tokens": 0,
+    "variant_permaslug": "openai/gpt-image-2.6-sunburst-20261104",
+    "change": null,
+    "rankingMetricValue": 0.0007725781681228846
+   },
+   {
+    "date": "2026-11-06 00:00:00",
+    "model_permaslug": "anthropic/claude-4.5-haiku-20251001",
+    "variant": "batch",
+    "total_completion_tokens": 25983899,
+    "total_prompt_tokens": 2662676,
+    "total_native_tokens_reasoning": 0,
+    "count": 7931,
+    "num_media_prompt": 0,
+    "num_media_completion": 0,
+    "image_output_requests": 0,
+    "num_video_prompt": 0,
+    "video_output_seconds": 0,
+    "rerank_documents": 0,
+    "stt_transcript_characters": 0,
+    "num_audio_prompt": 0,
+    "total_native_tokens_cached": 0,
+    "total_tool_calls": 0,
+    "requests_with_tool_call_errors": 0,
+    "total_byok_prompt_tokens": 0,
+    "total_byok_completion_tokens": 0,
+    "variant_permaslug": "anthropic/claude-4.5-haiku-20251001:batch",
+    "change": null,
+    "rankingMetricValue": 0
+   }
+  ]
+ },
+ "rankings_performance": {
+  "data": [
+   {
+    "id": "anthropic/claude-opus-5.5-20260921",
+    "slug": "anthropic/claude-opus-5.5-20260921",
+    "name": "Anthropic: Claude Opus 5.5",
+    "author": "anthropic",
+    "request_count": 9749607,
+    "p50_latency": 702,
+    "p50_throughput": 189,
+    "best_latency_provider": "Azure",
+    "best_latency_price": 4.4,
+    "best_throughput_provider": "Anthropic",
+    "best_throughput_price": 8,
+    "provider_count": 11
+   },
+   {
+    "id": "openai/gpt-6.1-terra-20261026",
+    "slug": "openai/gpt-6.1-terra-20261026",
+    "name": "OpenAI: GPT-6.1 Terra",
+    "author": "openai",
+    "request_count": 5206637,
+    "p50_latency": 1320,
+    "p50_throughput": 78,
+    "best_latency_provider": "OpenAI",
+    "best_latency_price": 2,
+    "best_throughput_provider": "Azure",
+    "best_throughput_price": 1,
+    "provider_count": 7
+   }
+  ]
+ },
+ "provider_page_html": "<!DOCTYPE html><html><body><div>x</div><script>self.__next_f.push([1,\"1:\\\"$Sreact.fragment\\\"\\n2:[\\\"$\\\",\\\"div\\\",null,{\\\"data\\\":\\\"$undefined\\\",\\\"isHipaaEligible\\\":false,\\\"chartData\\\":[{\\\"x\\\":\\\"2026-11-10 00:00:00\\\",\\\"ys\\\":{\\\"anthropic/claude-opus-5.5-20260921\\\":293571512229,\\\"anthropic/claude-haiku-5.5-20261007\\\":47884243645,\\\"Others\\\":48010086277,\\\"openai/gpt-6-luna-20260922\\\":100000000000.0}},{\\\"x\\\":\\\"202\"])</script><script>self.__next_f.push([1,\"6-11-11 00:00:00\\\",\\\"ys\\\":{\\\"anthropic/claude-opus-5.5-20260921\\\":315816671549,\\\"anthropic/claude-haiku-5.5-20261007\\\":53279302219,\\\"Others\\\":46113605138}},{\\\"x\\\":\\\"2026-11-12 00:00:00\\\",\\\"ys\\\":{\\\"anthropic/claude-opus-5.5-20260921\\\":268638055952,\\\"anthropic/claude-haiku-5.5-20261007\\\":23435687170,\\\"Others\\\":27883667939}}]}]\\n\"])</script></body></html>",
+ "author_page_html": "<!DOCTYPE html><html><body><div>x</div><script>self.__next_f.push([1,\"3:[\\\"$\\\",\\\"div\\\",null,{\\\"models\\\":[{\\\"slug\\\":\\\"a\\\",\\\"data\\\":[]}],\\\"data\\\":[{\\\"x\\\":\\\"2026-11-10 00:00:00\\\",\\\"ys\\\":{\\\"anthropic/claude-opus-5.5-20260921\\\":1113452279754,\\\"Others\\\":59561752372}},{\\\"x\\\":\\\"2026-11-11 00:00:0\"])</script><script>self.__next_f.push([1,\"0\\\",\\\"ys\\\":{\\\"anthropic/claude-opus-5.5-20260921\\\":1041867707839,\\\"Others\\\":63557622595}},{\\\"x\\\":\\\"2026-11-12 00:00:00\\\",\\\"ys\\\":{\\\"anthropic/claude-opus-5.5-20260921\\\":827416304971,\\\"Others\\\":43872093355}}]}]\\n\"])</script></body></html>",
+ "_note": "Trimmed OpenRouter responses for claude-opus-5.5 fetched 2026-11-12; pages are synthetic Next.js RSC wrappers around real chart rows."
+}
