@@ -1,0 +1,15 @@
+target,vintage,signal,anth_pairs,anth_pairs_with_signal,openai_pairs_with_signal,signal_in_forecast_window,first_signal_week
+rr_2026_02,2026-02-11,github_repo_share,73,73,59,True,2025-01-30
+rr_2026_02,2026-02-11,or_spend,73,0,0,False,2025-11-20
+rr_2026_03,2026-03-02,github_repo_share,118,118,59,True,2025-01-30
+rr_2026_03,2026-03-02,or_spend,118,8,0,True,2025-11-20
+rr_2026_04,2026-04-05,github_repo_share,124,124,152,True,2025-01-30
+rr_2026_04,2026-04-05,or_spend,124,12,26,True,2025-11-20
+rr_2026_05,2026-05-27,github_repo_share,136,136,158,True,2025-01-30
+rr_2026_05,2026-05-27,or_spend,136,23,32,True,2025-11-20
+rr_2026_09_s1a,2026-11-09,github_repo_share,190,190,233,True,2025-01-30
+rr_2026_09_s1a,2026-11-09,or_spend,190,77,107,True,2025-11-20
+rev_2026q3,2026-11-01,github_repo_share,190,190,233,False,2025-01-30
+rev_2026q3,2026-11-01,or_spend,190,77,107,False,2025-11-20
+rr_2026_10_s1a,2026-11-09,github_repo_share,190,190,233,True,2025-01-30
+rr_2026_10_s1a,2026-11-09,or_spend,190,77,107,True,2025-11-20
