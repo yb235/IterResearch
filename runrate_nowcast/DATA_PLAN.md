@@ -18,7 +18,7 @@
 | 4 | OpenRouter 上 Claude 各接口的可用率、延迟、吞吐量，以及各供应商（Anthropic 直连、Bedrock、Vertex）的流量占比 | 容量是否卡住收入；云渠道占比 | 接口给当前值；历史需要持续抓 | 可以访问 | 子任务 C | 完成：`openrouter_endpoints.py` 及快照。各供应商占比只有 90 天历史，花费份额只有当前窗口，需要每天抓 |
 | 5 | 消费者刷卡面板：YipitData、Second Measure、Earnest、Consumer Edge | 按 $20 / $100 / $200 直接拆订阅档位 | 有 | 付费 | — | 需要预算 |
 | 6 | 二级市场和上市后数据：Forge、Caplight 报价；上市后的股价、期权、卖方预测 | 市场预期 | 二级市场只有零星新闻；卖方预测要等 IPO 静默期结束（约 12 月中） | 新闻可搜 | — | 待定 |
-| 7 | 关注度：Similarweb、App 数据、Google Trends、Wikipedia、Hacker News、Reddit、招聘岗位 | 消费端热度 | 多数有 | 付费或被拦截 | — | 待放行或预算 |
+| 7 | 关注度：Similarweb、App 数据、Google Trends、Wikipedia、Hacker News、Reddit、招聘岗位 | 消费端热度 | 多数有 | 付费或被拦截 | 子任务 K | 部分完成：175 条（`data/consumer_signals.csv`），全部来自新闻和搜索摘要里引用的 Similarweb、App 数据；只有带发布日期的进入模型 |
 
 ## 需要放行的网站
 
@@ -63,3 +63,8 @@
 | F | `data/openai_claims.csv`：OpenAI 2024–2026 的 run-rate 和收入说法 | 完成：56 条，进入模型 31 条，全部来自搜索摘要 |
 | G | 因子模型加带收缩的回归，用两家公司的面板，按固定流程回测 | 完成：合训对线性模型略有帮助，但没有赢过只加一个信号的 E、G（见 README） |
 | H | 冻结规格，登记 Q4 2026 收入和 12/31 run-rate 的预测 | 完成：9 个模型于 2026-11-12 登记（代码版本 88da605），不用 S-1 数字 |
+| I | 更多数据：Ramp AI 指数历史、npm 和 PyPI 下载量、AI SDK 里各家份额，`features.py` 扩到 43 列 | 完成 |
+| J | `model_zoo.py`：18 种 ML、自动选择、堆叠，两套特征 | 完成：没有一个事先定好的组合赢过 E、G；加全部特征没有帮助 |
+| K | 消费端数据：网站访问、App 下载 | 部分完成：见上表第 7 行 |
+| L | 诊断：ML 结果为什么奇怪 | 完成：交叉验证的标签用到了验证段之后的说法；晚开始的特征补 0；ρ 处理不统一；ML 框架本身收缩过强（`reports/zoo_diagnostics_2026-11-12.md`） |
+| M | `ml_fixed.py`：按诊断修复，规格在运行前写定 | 完成：事先定的 M1 因为我写的先验有误而失败；M2 和 E、G 打平，但部分是误差互相抵消。瓶颈仍是标签和锚点太少 |
