@@ -1,15 +1,15 @@
 date,indicator,value,published,source,note
-2025-01-31,github_repo_share_claude,0.10874389702618731,2025-02-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
-2025-02-28,github_repo_share_claude,0.11356219814645607,2025-03-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
-2025-03-31,github_repo_share_claude,0.18677115402556208,2025-04-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
+2025-01-31,github_repo_share_claude,0.1087438970261873,2025-02-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
+2025-02-28,github_repo_share_claude,0.113562198146456,2025-03-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
+2025-03-31,github_repo_share_claude,0.186771154025562,2025-04-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
 2025-04-30,github_repo_share_claude,0.130922585656339,2025-05-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
-2025-05-31,github_repo_share_claude,0.14755618979664645,2025-06-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
-2025-06-30,github_repo_share_claude,0.21972498266697482,2025-07-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
+2025-05-31,github_repo_share_claude,0.1475561897966464,2025-06-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
+2025-06-30,github_repo_share_claude,0.2197249826669748,2025-07-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
 2025-07-31,github_repo_share_claude,0.2248723073506551,2025-08-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
-2025-08-31,github_repo_share_claude,0.23468063202184325,2025-09-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
-2025-09-30,github_repo_share_claude,0.21923183199778945,2025-10-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
+2025-08-31,github_repo_share_claude,0.2346806320218432,2025-09-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
+2025-09-30,github_repo_share_claude,0.2192318319977894,2025-10-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
 2025-10-31,github_repo_share_claude,0.2914141414141414,2025-11-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
-2025-11-30,github_repo_share_claude,0.30462892119357304,2025-12-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
+2025-11-30,github_repo_share_claude,0.304628921193573,2025-12-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
 2025-12-31,github_repo_share_claude,0.3382762514113662,2026-01-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
 2026-01-31,github_repo_share_claude,0.5244524687966088,2026-02-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
 2026-02-28,github_repo_share_claude,0.5993296891832582,2026-03-01,api.github.com/search/repositories (counts measured 2026-11-11),share of new public repos mentioning claude among claude/openai/gemini; counts measured after the fact
@@ -9522,7 +9522,6 @@ date,indicator,value,published,source,note
 2026-11-08,npm_vertex_sdk,173244.0,,npm:@anthropic-ai/vertex-sdk,
 2026-11-09,npm_vertex_sdk,305079.0,,npm:@anthropic-ai/vertex-sdk,
 2026-11-10,npm_vertex_sdk,343084.0,,npm:@anthropic-ai/vertex-sdk,
-2025-11-16,openrouter_anthropic_tokens,614447999147.0,2025-11-17,openrouter:author-market-share,share of all OpenRouter tokens 0.1511
 2025-11-23,openrouter_anthropic_tokens,746342378857.0,2025-11-24,openrouter:author-market-share,share of all OpenRouter tokens 0.1190
 2025-11-30,openrouter_anthropic_tokens,761816162621.0,2025-12-01,openrouter:author-market-share,share of all OpenRouter tokens 0.1060
 2025-12-07,openrouter_anthropic_tokens,878204184440.0,2025-12-08,openrouter:author-market-share,share of all OpenRouter tokens 0.1420
@@ -9574,7 +9573,6 @@ date,indicator,value,published,source,note
 2026-10-25,openrouter_anthropic_tokens,16123145097204.0,2026-10-26,openrouter:author-market-share,share of all OpenRouter tokens 0.0857
 2026-11-01,openrouter_anthropic_tokens,14255360973235.0,2026-11-02,openrouter:author-market-share,share of all OpenRouter tokens 0.0736
 2026-11-08,openrouter_anthropic_tokens,13616933960628.0,2026-11-09,openrouter:author-market-share,share of all OpenRouter tokens 0.0650
-2025-11-16,openrouter_google_tokens,751263043232.0,2025-11-17,openrouter:author-market-share,share of all OpenRouter tokens 0.1847
 2025-11-23,openrouter_google_tokens,1249542695771.0,2025-11-24,openrouter:author-market-share,share of all OpenRouter tokens 0.1992
 2025-11-30,openrouter_google_tokens,1293741014091.0,2025-12-01,openrouter:author-market-share,share of all OpenRouter tokens 0.1801
 2025-12-07,openrouter_google_tokens,1301473615680.0,2025-12-08,openrouter:author-market-share,share of all OpenRouter tokens 0.2105
@@ -9626,7 +9624,6 @@ date,indicator,value,published,source,note
 2026-10-25,openrouter_google_tokens,6423372130018.0,2026-10-26,openrouter:author-market-share,share of all OpenRouter tokens 0.0342
 2026-11-01,openrouter_google_tokens,6505604535194.0,2026-11-02,openrouter:author-market-share,share of all OpenRouter tokens 0.0336
 2026-11-08,openrouter_google_tokens,6327387192690.0,2026-11-09,openrouter:author-market-share,share of all OpenRouter tokens 0.0302
-2025-11-16,openrouter_openai_tokens,370505105694.0,2025-11-17,openrouter:author-market-share,share of all OpenRouter tokens 0.0911
 2025-11-23,openrouter_openai_tokens,620139618717.0,2025-11-24,openrouter:author-market-share,share of all OpenRouter tokens 0.0989
 2025-11-30,openrouter_openai_tokens,660259602026.0,2025-12-01,openrouter:author-market-share,share of all OpenRouter tokens 0.0919
 2025-12-07,openrouter_openai_tokens,708699565788.0,2025-12-08,openrouter:author-market-share,share of all OpenRouter tokens 0.1146

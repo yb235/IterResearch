@@ -255,11 +255,14 @@ def fetch_openrouter_authors(authors=("anthropic", "openai", "google"), asof=Non
     """Weekly tokens by model author on OpenRouter (public rankings endpoint, last 53 weeks).
 
     Only complete weeks are kept. Each value is dated at the week's last day and published the
-    day after: OpenRouter shows the week as soon as it ends, and usage logs are not revised.
+    day after: OpenRouter shows the week as soon as it ends. Snapshots on 2026-11-11 and
+    2026-11-12 agreed on every complete week except the oldest one, which the rolling window
+    truncates (it fell 22% in a day), so the oldest week is dropped too.
     Tokens, not spend (the endpoint has no spend for this dataset).
     """
     asof = pd.Timestamp(asof or dt.date.today())
     d = json.loads(_get("https://openrouter.ai/api/frontend/v1/rankings/author-market-share"))["data"]["data"]
+    d = sorted(d, key=lambda r: r["x"])[1:]          # oldest week: cut by the rolling window
     rows = []
     for r in d:
         start = pd.Timestamp(r["x"])
