@@ -287,3 +287,18 @@ def test_feature_spec_rule(monkeypatch):
                  "cloud_bedrock_growth_cum": ("cloud_bedrock_growth", "cumsum"), "new_share": ("new_share", "level")}
     with pytest.raises(ValueError):
         mz.feature_spec("nonexistent")
+
+
+def test_all_feature_set_extends_g_spec(sources):
+    """The 'all' feature set builds, keeps the g_spec features unchanged, and stops at the vintage's week."""
+    if "all" not in getattr(F, "FEATURE_SETS", {}):
+        pytest.skip("features.FEATURE_SETS['all'] not defined")
+    v = pd.Timestamp("2026-06-30")
+    spec = mz.feature_spec("all")
+    for c in ("anthropic", "openai"):
+        a = mz.feature_levels(c, v, sources, "all")
+        g = mz.feature_levels(c, v, sources, "g_spec")
+        assert list(a.columns) == list(spec) and a.index.max() == F._week_label([v])[0]
+        shared = [k for k in g.columns if k in a.columns]
+        assert len(shared) == len(pm.FEATURE_SPEC)
+        pd.testing.assert_frame_equal(a[shared], g[shared])

@@ -7,7 +7,85 @@ hyperparameters by purged time-ordered CV inside the training pairs public at ea
 error on training pairs. **stack** = non-negative weights summing to one on the members' out-of-fold
 predictions. `pooled` = Anthropic + OpenAI pairs; `own` = Anthropic only (pre-declared control).
 Errors are log(actual / forecast); negative = forecast too high. Filing rows are never inputs.
-Feature sets in this report: g_spec.
+Feature sets in this report: g_spec, all.
+
+## Feature sets side by side
+
+Same protocol, same zoo, same AUTO rule and controls; only the feature columns differ (g_spec: the 8
+features of sub-task G; all: every column of `features.FEATURE_SETS["all"]`, mapped by the protocol's
+rule). Mean |log error| on the Anthropic targets that every model below forecast (per rule). Members:
+pooled. `best member` is chosen after seeing the test errors and is optimistic.
+
+### Anthropic targets
+
+|                               | publication: g_spec (n=14)   | publication: all (n=14)   | period_end: g_spec (n=11)   | period_end: all (n=11)   |
+|:------------------------------|:-----------------------------|:--------------------------|:----------------------------|:-------------------------|
+| AUTO (pooled)                 | 0.150                        | 0.205                     | 0.224                       | 0.219                    |
+| stack (pooled)                | 0.175                        | 0.205                     | 0.265                       | 0.227                    |
+| AUTO (own)                    | 0.273                        | 0.261                     | 0.337                       | 0.362                    |
+| stack (own)                   | 0.274                        | 0.261                     | 0.335                       | 0.365                    |
+| best member (optimistic)      | 0.137                        | 0.117                     | 0.185                       | 0.211                    |
+| median member                 | 0.183                        | 0.204                     | 0.233                       | 0.246                    |
+| worst member                  | 0.239                        | 0.256                     | 0.312                       | 0.305                    |
+| best member is                | ridge                        | ridge                     | ard                         | lasso                    |
+| SS claims only (panel labels) | 0.211                        | 0.211                     | 0.238                       | 0.238                    |
+| A claims only                 | 0.207                        | 0.207                     | 0.224                       | 0.224                    |
+| E OpenRouter tokens x price   | 0.105                        | 0.105                     | 0.156                       | 0.156                    |
+| G GitHub new-repo share       | 0.099                        | 0.099                     | 0.151                       | 0.151                    |
+| naive last claim              | 0.221                        | 0.221                     | 0.257                       | 0.257                    |
+
+Every member (pooled), mean |log error| on the targets both AUTO versions forecast:
+
+|              |   publication: g_spec |   publication: all |   period_end: g_spec |   period_end: all |
+|:-------------|----------------------:|-------------------:|---------------------:|------------------:|
+| trend        |                 0.239 |              0.239 |                0.293 |             0.293 |
+| ridge        |                 0.137 |              0.117 |                0.221 |             0.212 |
+| lasso        |                 0.203 |              0.17  |                0.249 |             0.211 |
+| enet         |                 0.171 |              0.205 |                0.206 |             0.233 |
+| pca          |                 0.19  |              0.249 |                0.312 |             0.305 |
+| pls          |                 0.161 |              0.175 |                0.234 |             0.22  |
+| bayes_ridge  |                 0.144 |              0.169 |                0.189 |             0.215 |
+| ard          |                 0.141 |              0.172 |                0.185 |             0.224 |
+| kernel_ridge |                 0.226 |              0.225 |                0.27  |             0.275 |
+| gp           |                 0.225 |              0.221 |                0.268 |             0.267 |
+| knn          |                 0.207 |              0.203 |                0.253 |             0.25  |
+| rf           |                 0.172 |              0.213 |                0.203 |             0.253 |
+| extra_trees  |                 0.208 |              0.229 |                0.258 |             0.285 |
+| hgb          |                 0.175 |              0.201 |                0.209 |             0.238 |
+| lightgbm     |                 0.158 |              0.203 |                0.195 |             0.241 |
+| xgboost      |                 0.166 |              0.212 |                0.2   |             0.252 |
+| mlp          |                 0.191 |              0.256 |                0.255 |             0.261 |
+| midas        |                 0.197 |              0.203 |                0.231 |             0.242 |
+
+Paired, publication (`B vs A`: negative = B better; 90% bootstrap interval):
+
+| rule        | comparison                                      |   n |   mean_diff |   ci90_lo |   ci90_hi |   improved |   worse |
+|:------------|:------------------------------------------------|----:|------------:|----------:|----------:|-----------:|--------:|
+| publication | AUTO (pooled) [all] vs AUTO (pooled) [g_spec]   |  14 |       0.054 |     0.011 |     0.107 |          1 |       6 |
+| publication | stack (pooled) [all] vs stack (pooled) [g_spec] |  14 |       0.03  |     0.003 |     0.059 |          3 |       4 |
+| publication | AUTO (own) [all] vs AUTO (own) [g_spec]         |  14 |      -0.012 |    -0.095 |     0.067 |          4 |       2 |
+| publication | stack (own) [all] vs stack (own) [g_spec]       |  14 |      -0.013 |    -0.093 |     0.059 |          5 |       2 |
+
+Paired, period_end (`B vs A`: negative = B better; 90% bootstrap interval):
+
+| rule       | comparison                                      |   n |   mean_diff |   ci90_lo |   ci90_hi |   improved |   worse |
+|:-----------|:------------------------------------------------|----:|------------:|----------:|----------:|-----------:|--------:|
+| period_end | AUTO (pooled) [all] vs AUTO (pooled) [g_spec]   |  11 |      -0.005 |    -0.073 |     0.07  |          5 |       6 |
+| period_end | stack (pooled) [all] vs stack (pooled) [g_spec] |  11 |      -0.039 |    -0.1   |     0.027 |          9 |       2 |
+| period_end | AUTO (own) [all] vs AUTO (own) [g_spec]         |  11 |       0.025 |    -0.039 |     0.104 |          5 |       3 |
+| period_end | stack (own) [all] vs stack (own) [g_spec]       |  11 |       0.029 |    -0.027 |     0.095 |          7 |       3 |
+
+### OpenAI targets (pooled)
+
+|                               | publication: g_spec (n=15)   | publication: all (n=15)   | period_end: g_spec (n=15)   | period_end: all (n=15)   |
+|:------------------------------|:-----------------------------|:--------------------------|:----------------------------|:-------------------------|
+| AUTO (pooled)                 | 0.106                        | 0.105                     | 0.085                       | 0.095                    |
+| stack (pooled)                | 0.097                        | 0.096                     | 0.079                       | 0.080                    |
+| SS claims only (panel labels) | 0.101                        | 0.101                     | 0.075                       | 0.075                    |
+| naive last claim (panel)      | 0.160                        | 0.160                     | 0.199                       | 0.199                    |
+| best member (optimistic)      | 0.079                        | 0.076                     | 0.073                       | 0.071                    |
+| median member                 | 0.092                        | 0.093                     | 0.084                       | 0.086                    |
+| best member is                | kernel_ridge                 | knn                       | trend                       | enet                     |
 
 ## Anthropic targets (g_spec)
 
@@ -333,6 +411,330 @@ Per-target log error:
 | ('publication', 'own')    |             0 |              0 |    12 |     1 |    0 |       0 |       1 |
 | ('publication', 'pooled') |             0 |              1 |     0 |     1 |    3 |       9 |       0 |
 
+## Anthropic targets (all)
+
+### Headline: mean |log error| on common Anthropic targets (all)
+
+Common targets = those forecast by AUTO, stack (both pools), A, E, G and the naive last claim.
+AUTO (pooled) is the pre-declared headline model.
+
+| model                         |   publication: n_common |   publication: mae_log_common |   publication: mae_log_h2_2026 |   period_end: n_common |   period_end: mae_log_common |   period_end: mae_log_h2_2026 |
+|:------------------------------|------------------------:|------------------------------:|-------------------------------:|-----------------------:|-----------------------------:|------------------------------:|
+| AUTO (pooled)                 |                      14 |                         0.205 |                          0.303 |                     11 |                        0.219 |                         0.338 |
+| stack (pooled)                |                      14 |                         0.205 |                          0.422 |                     11 |                        0.227 |                         0.462 |
+| AUTO (own)                    |                      14 |                         0.261 |                          0.534 |                     11 |                        0.362 |                         0.68  |
+| stack (own)                   |                      14 |                         0.261 |                          0.534 |                     11 |                        0.365 |                         0.68  |
+| SS claims only (panel labels) |                      14 |                         0.211 |                          0.462 |                     11 |                        0.238 |                         0.357 |
+| A claims only                 |                      14 |                         0.207 |                          0.512 |                     11 |                        0.224 |                         0.452 |
+| E OpenRouter tokens x price   |                      14 |                         0.105 |                          0.2   |                     11 |                        0.156 |                         0.337 |
+| G GitHub new-repo share       |                      14 |                         0.099 |                          0.203 |                     11 |                        0.151 |                         0.047 |
+| naive last claim              |                      14 |                         0.221 |                          0.056 |                     11 |                        0.257 |                         0.056 |
+| P panel pca (pooled)          |                      14 |                         0.19  |                          0.376 |                     11 |                        0.312 |                         0.662 |
+| P panel ridge (pooled)        |                      14 |                         0.137 |                          0.177 |                     11 |                        0.221 |                         0.346 |
+
+### Vintage rule: publication (all)
+
+All models, own targets and common targets (bias: mean log error, + = forecast too low):
+
+| model                         |   n |   mae_log |   n_common |   mae_log_common |   bias_log_common |   mae_log_h2_2026 |
+|:------------------------------|----:|----------:|-----------:|-----------------:|------------------:|------------------:|
+| AUTO (pooled)                 |  14 |     0.205 |         14 |            0.205 |            -0.027 |             0.303 |
+| stack (pooled)                |  14 |     0.205 |         14 |            0.205 |            -0.042 |             0.422 |
+| AUTO (own)                    |  14 |     0.261 |         14 |            0.261 |            -0.06  |             0.534 |
+| stack (own)                   |  14 |     0.261 |         14 |            0.261 |            -0.055 |             0.534 |
+| SS claims only (panel labels) |  14 |     0.211 |         14 |            0.211 |            -0.057 |             0.462 |
+| A claims only                 |  15 |     0.223 |         14 |            0.207 |            -0.065 |             0.512 |
+| E OpenRouter tokens x price   |  15 |     0.132 |         14 |            0.105 |             0.036 |             0.2   |
+| G GitHub new-repo share       |  15 |     0.1   |         14 |            0.099 |            -0.012 |             0.203 |
+| naive last claim              |  15 |     0.262 |         14 |            0.221 |             0.215 |             0.056 |
+| P panel pca (pooled)          |  14 |     0.19  |         14 |            0.19  |             0.004 |             0.376 |
+| P panel ridge (pooled)        |  14 |     0.137 |         14 |            0.137 |             0.035 |             0.177 |
+
+Every member, mean |log error| on the targets AUTO forecast. The best member is selected after
+the fact and therefore optimistic; ranks are among the members only:
+
+| model        |   pooled |   own |   rank_pooled |   rank_own |
+|:-------------|---------:|------:|--------------:|-----------:|
+| ridge        |    0.117 | 0.204 |             1 |          7 |
+| bayes_ridge  |    0.169 | 0.13  |             2 |          1 |
+| lasso        |    0.17  | 0.218 |             3 |         12 |
+| ard          |    0.172 | 0.153 |             4 |          2 |
+| pls          |    0.175 | 0.246 |             5 |         17 |
+| hgb          |    0.201 | 0.2   |             6 |          5 |
+| knn          |    0.203 | 0.239 |             7 |         15 |
+| lightgbm     |    0.203 | 0.191 |             8 |          4 |
+| midas        |    0.203 | 0.202 |             9 |          6 |
+| enet         |    0.205 | 0.209 |            10 |          9 |
+| AUTO         |    0.205 | 0.261 |           nan |        nan |
+| stack        |    0.205 | 0.261 |           nan |        nan |
+| xgboost      |    0.212 | 0.184 |            11 |          3 |
+| rf           |    0.213 | 0.209 |            12 |          8 |
+| gp           |    0.221 | 0.209 |            13 |         10 |
+| kernel_ridge |    0.225 | 0.216 |            14 |         11 |
+| extra_trees  |    0.229 | 0.227 |            15 |         13 |
+| trend        |    0.239 | 0.24  |            16 |         16 |
+| pca          |    0.249 | 0.249 |            17 |         18 |
+| mlp          |    0.256 | 0.229 |            18 |         14 |
+
+Spread of member scores, AUTO's rank, and a leave-one-target-out best-of-zoo (pick the member
+with the lowest error on the other targets, score it on the held-out one):
+
+| pool   |   n_targets |   n_members | best member (optimistic)   |   best |   p25 |   median |   p75 |   worst | worst member   |   AUTO |   AUTO rank among members |   stack |   LOO best-of-zoo |
+|:-------|------------:|------------:|:---------------------------|-------:|------:|---------:|------:|--------:|:---------------|-------:|--------------------------:|--------:|------------------:|
+| pooled |          14 |          18 | ridge                      |  0.117 | 0.181 |    0.204 | 0.224 |   0.256 | mlp            |  0.205 |                        11 |   0.205 |             0.189 |
+| own    |          14 |          18 | bayes_ridge                |  0.13  | 0.2   |    0.209 | 0.229 |   0.249 | pca            |  0.261 |                        19 |   0.261 |             0.13  |
+
+AUTO's pick and log error per target:
+
+| target         | vintage    |   gap_weeks | own   | pooled   |   log_err AUTO own |   log_err AUTO pooled |
+|:---------------|:-----------|------------:|:------|:---------|-------------------:|----------------------:|
+| rr_2026_02     | 2026-02-11 |       15.43 | trend | pca      |              0.36  |                 0.325 |
+| rr_2025_12     | 2026-03-02 |        0    | pca   | rf       |             -0.171 |                -0.171 |
+| rr_2026_03     | 2026-03-02 |        1.86 | pca   | rf       |              0.16  |                 0.238 |
+| rr_2026_04     | 2026-04-05 |        3.71 | pls   | rf       |              0.596 |                 0.387 |
+| rr_2026_05     | 2026-05-27 |        8    | midas | midas    |             -0.467 |                -0.537 |
+| rev_2025fy     | 2026-10-25 |        0    | mlp   | lasso    |              0.08  |                 0.08  |
+| rev_2025q1     | 2026-10-25 |        0    | mlp   | lasso    |              0.098 |                 0.098 |
+| rev_2025q2     | 2026-10-25 |        0    | mlp   | lasso    |              0.028 |                 0.028 |
+| rev_2025q3     | 2026-10-25 |        0    | mlp   | lasso    |              0.041 |                 0.041 |
+| rev_2026q1     | 2026-10-25 |        0    | mlp   | lasso    |              0.044 |                 0.044 |
+| rev_2026q2     | 2026-10-25 |        0    | mlp   | lasso    |             -0.01  |                -0.01  |
+| rev_2026q3     | 2026-11-01 |       11.14 | mlp   | lasso    |             -0.392 |                -0.15  |
+| rr_2026_09_s1a | 2026-11-09 |        9.14 | mlp   | lasso    |             -0.576 |                -0.37  |
+| rr_2026_10_s1a | 2026-11-09 |       13.57 | mlp   | lasso    |             -0.633 |                -0.388 |
+
+H2 2026 targets, % error (+ = forecast too high):
+
+| model                         |   rev_2026q3 |   rr_2026_09_s1a |   rr_2026_10_s1a |
+|:------------------------------|-------------:|-----------------:|-----------------:|
+| AUTO (pooled)                 |         16.2 |             44.7 |             47.3 |
+| stack (pooled)                |         25.5 |             59.4 |             77.2 |
+| AUTO (own)                    |         48   |             77.9 |             88.4 |
+| stack (own)                   |         48   |             77.9 |             88.4 |
+| SS claims only (panel labels) |         26.8 |             72.5 |             83.1 |
+| A claims only                 |         38.3 |             76.5 |             90   |
+| E OpenRouter tokens x price   |         -5   |            -23   |             33.3 |
+| G GitHub new-repo share       |         -1.4 |             33.8 |             35.3 |
+| naive last claim              |          3.8 |              0   |            -12.3 |
+| P panel pca (pooled)          |         21.8 |             57.5 |             60.9 |
+| P panel ridge (pooled)        |          4.2 |             26.3 |             29.1 |
+| trend (pooled)                |         37.5 |             92.5 |            119.9 |
+| ridge (pooled)                |         -6.4 |             -0.1 |            -11.5 |
+| lasso (pooled)                |         16.2 |             44.7 |             47.3 |
+| enet (pooled)                 |         14.1 |             40.5 |             39.2 |
+| pca (pooled)                  |         44.5 |            107.9 |            138   |
+| pls (pooled)                  |          6.4 |             25.9 |             21.7 |
+| bayes_ridge (pooled)          |         -6.5 |             -0.4 |            -11.8 |
+| ard (pooled)                  |         -4.5 |              6.2 |              4   |
+| kernel_ridge (pooled)         |         37.3 |             91.5 |            117.4 |
+| gp (pooled)                   |         37.2 |             91.5 |            117.4 |
+| knn (pooled)                  |         34   |             86.1 |             90.7 |
+| rf (pooled)                   |         35.1 |             87.7 |            104.1 |
+| extra_trees (pooled)          |         40.7 |            100   |            133.6 |
+| hgb (pooled)                  |         34.5 |             87.7 |            105.7 |
+| lightgbm (pooled)             |         32.3 |             80.2 |             86.1 |
+| xgboost (pooled)              |         34.5 |             86.4 |             92.6 |
+| mlp (pooled)                  |         44.6 |            104.2 |            150.9 |
+| midas (pooled)                |         22.1 |             46.1 |             71.1 |
+
+Paired differences in |log error| (`B vs A`: negative = B better; 90% bootstrap interval):
+
+| rule        | comparison                                      |   n |   mean_diff |   ci90_lo |   ci90_hi |   improved |   worse |
+|:------------|:------------------------------------------------|----:|------------:|----------:|----------:|-----------:|--------:|
+| publication | AUTO (pooled) vs A claims only                  |  14 |      -0.002 |    -0.066 |     0.066 |          7 |       7 |
+| publication | AUTO (pooled) vs E OpenRouter tokens x price    |  14 |       0.1   |     0.041 |     0.164 |          4 |      10 |
+| publication | AUTO (pooled) vs G GitHub new-repo share        |  14 |       0.105 |     0.06  |     0.159 |          2 |      12 |
+| publication | AUTO (pooled) vs naive last claim               |  14 |      -0.016 |    -0.09  |     0.061 |         10 |       4 |
+| publication | AUTO (pooled) vs SS claims only (panel labels)  |  14 |      -0.007 |    -0.054 |     0.043 |          7 |       6 |
+| publication | AUTO (pooled) vs P panel pca (pooled)           |  14 |       0.014 |    -0.027 |     0.075 |          5 |       2 |
+| publication | AUTO (pooled) vs P panel ridge (pooled)         |  14 |       0.068 |     0.013 |     0.135 |          2 |       5 |
+| publication | stack (pooled) vs A claims only                 |  14 |      -0.002 |    -0.037 |     0.038 |          7 |       7 |
+| publication | stack (pooled) vs E OpenRouter tokens x price   |  14 |       0.1   |     0.047 |     0.151 |          4 |      10 |
+| publication | stack (pooled) vs G GitHub new-repo share       |  14 |       0.106 |     0.069 |     0.143 |          2 |      12 |
+| publication | stack (pooled) vs naive last claim              |  14 |      -0.016 |    -0.114 |     0.086 |         11 |       3 |
+| publication | stack (pooled) vs SS claims only (panel labels) |  14 |      -0.006 |    -0.03  |     0.019 |          8 |       5 |
+| publication | AUTO (pooled) vs AUTO (own)                     |  14 |      -0.056 |    -0.106 |    -0.009 |          5 |       2 |
+| publication | stack (pooled) vs stack (own)                   |  14 |      -0.056 |    -0.092 |    -0.023 |          6 |       1 |
+| publication | AUTO (pooled) vs stack (pooled)                 |  14 |      -0     |    -0.038 |     0.041 |          3 |       4 |
+
+Per-target log error:
+
+| target         |   AUTO (pooled) |   stack (pooled) |   AUTO (own) |   stack (own) |   SS claims only (panel labels) |   A claims only |   E OpenRouter tokens x price |   G GitHub new-repo share |   naive last claim |
+|:---------------|----------------:|-----------------:|-------------:|--------------:|--------------------------------:|----------------:|------------------------------:|--------------------------:|-------------------:|
+| rev_2025fy     |           0.08  |            0.08  |        0.08  |         0.08  |                           0.073 |           0.062 |                         0.014 |                    -0.022 |              0.118 |
+| rev_2025q1     |           0.098 |            0.098 |        0.098 |         0.098 |                           0.091 |           0.082 |                         0.166 |                    -0.023 |              0.145 |
+| rev_2025q2     |           0.028 |            0.028 |        0.028 |         0.028 |                           0.02  |           0.067 |                         0.029 |                    -0.012 |              0.149 |
+| rev_2025q3     |           0.041 |            0.041 |        0.041 |         0.041 |                           0.03  |           0.043 |                        -0.184 |                    -0.042 |              0.158 |
+| rev_2026q1     |           0.044 |            0.044 |        0.044 |         0.044 |                           0.044 |           0.05  |                         0.048 |                    -0.05  |              0.138 |
+| rev_2026q2     |          -0.01  |           -0.01  |       -0.01  |        -0.01  |                          -0.01  |          -0.004 |                        -0.008 |                     0.005 |              0.056 |
+| rev_2026q3     |          -0.15  |           -0.227 |       -0.392 |        -0.392 |                          -0.237 |          -0.324 |                         0.051 |                     0.014 |             -0.038 |
+| rr_2025_10     |         nan     |          nan     |      nan     |       nan     |                         nan     |          -0.44  |                        -0.517 |                    -0.113 |              0.847 |
+| rr_2025_12     |          -0.171 |           -0.171 |       -0.171 |        -0.171 |                          -0.171 |          -0.163 |                        -0.003 |                    -0.039 |              0.251 |
+| rr_2026_02     |           0.325 |            0.261 |        0.36  |         0.36  |                           0.374 |           0.363 |                         0.096 |                     0.113 |              0.693 |
+| rr_2026_03     |           0.238 |            0.231 |        0.16  |         0.198 |                           0.242 |           0.217 |                         0.087 |                     0.18  |              0.305 |
+| rr_2026_04     |           0.387 |            0.355 |        0.596 |         0.596 |                           0.207 |           0.108 |                         0.108 |                     0.197 |              0.457 |
+| rr_2026_05     |          -0.537 |           -0.285 |       -0.467 |        -0.425 |                          -0.31  |          -0.206 |                         0.12  |                     0.098 |              0.449 |
+| rr_2026_09_s1a |          -0.37  |           -0.466 |       -0.576 |        -0.576 |                          -0.545 |          -0.568 |                         0.262 |                    -0.291 |              0     |
+| rr_2026_10_s1a |          -0.388 |           -0.572 |       -0.633 |        -0.633 |                          -0.605 |          -0.642 |                        -0.288 |                    -0.302 |              0.132 |
+
+### Vintage rule: period_end (all)
+
+All models, own targets and common targets (bias: mean log error, + = forecast too low):
+
+| model                         |   n |   mae_log |   n_common |   mae_log_common |   bias_log_common |   mae_log_h2_2026 |
+|:------------------------------|----:|----------:|-----------:|-----------------:|------------------:|------------------:|
+| AUTO (pooled)                 |  11 |     0.219 |         11 |            0.219 |            -0.101 |             0.338 |
+| stack (pooled)                |  11 |     0.227 |         11 |            0.227 |            -0.083 |             0.462 |
+| AUTO (own)                    |  11 |     0.362 |         11 |            0.362 |            -0.097 |             0.68  |
+| stack (own)                   |  11 |     0.365 |         11 |            0.365 |            -0.104 |             0.68  |
+| SS claims only (panel labels) |  11 |     0.238 |         11 |            0.238 |            -0.08  |             0.357 |
+| A claims only                 |  13 |     0.248 |         11 |            0.224 |            -0.092 |             0.452 |
+| E OpenRouter tokens x price   |  13 |     0.2   |         11 |            0.156 |             0.044 |             0.337 |
+| G GitHub new-repo share       |  13 |     0.156 |         11 |            0.151 |             0.125 |             0.047 |
+| naive last claim              |  13 |     0.329 |         11 |            0.257 |             0.25  |             0.056 |
+| P panel pca (pooled)          |  11 |     0.312 |         11 |            0.312 |            -0.09  |             0.662 |
+| P panel ridge (pooled)        |  11 |     0.221 |         11 |            0.221 |            -0.01  |             0.346 |
+
+Every member, mean |log error| on the targets AUTO forecast. The best member is selected after
+the fact and therefore optimistic; ranks are among the members only:
+
+| model        |   pooled |   own |   rank_pooled |   rank_own |
+|:-------------|---------:|------:|--------------:|-----------:|
+| lasso        |    0.211 | 0.267 |             1 |         11 |
+| ridge        |    0.212 | 0.255 |             2 |          8 |
+| bayes_ridge  |    0.215 | 0.177 |             3 |          2 |
+| AUTO         |    0.219 | 0.362 |           nan |        nan |
+| pls          |    0.22  | 0.308 |             4 |         17 |
+| ard          |    0.224 | 0.172 |             5 |          1 |
+| stack        |    0.227 | 0.365 |           nan |        nan |
+| enet         |    0.233 | 0.242 |             6 |          5 |
+| hgb          |    0.238 | 0.241 |             7 |          4 |
+| lightgbm     |    0.241 | 0.247 |             8 |          6 |
+| midas        |    0.242 | 0.252 |             9 |          7 |
+| knn          |    0.25  | 0.303 |            10 |         16 |
+| xgboost      |    0.252 | 0.218 |            11 |          3 |
+| rf           |    0.253 | 0.256 |            12 |          9 |
+| mlp          |    0.261 | 0.358 |            13 |         18 |
+| gp           |    0.267 | 0.266 |            14 |         10 |
+| kernel_ridge |    0.275 | 0.274 |            15 |         12 |
+| extra_trees  |    0.285 | 0.284 |            16 |         13 |
+| trend        |    0.293 | 0.293 |            17 |         14 |
+| pca          |    0.305 | 0.299 |            18 |         15 |
+
+Spread of member scores, AUTO's rank, and a leave-one-target-out best-of-zoo (pick the member
+with the lowest error on the other targets, score it on the held-out one):
+
+| pool   |   n_targets |   n_members | best member (optimistic)   |   best |   p25 |   median |   p75 |   worst | worst member   |   AUTO |   AUTO rank among members |   stack |   LOO best-of-zoo |
+|:-------|------------:|------------:|:---------------------------|-------:|------:|---------:|------:|--------:|:---------------|-------:|--------------------------:|--------:|------------------:|
+| pooled |          11 |          18 | lasso                      |  0.211 | 0.226 |    0.246 | 0.265 |   0.305 | pca            |  0.219 |                         4 |   0.227 |             0.392 |
+| own    |          11 |          18 | ard                        |  0.172 | 0.243 |    0.261 | 0.291 |   0.358 | mlp            |  0.362 |                        19 |   0.365 |             0.193 |
+
+AUTO's pick and log error per target:
+
+| target         | vintage    |   gap_weeks | own   | pooled   |   log_err AUTO own |   log_err AUTO pooled |
+|:---------------|:-----------|------------:|:------|:---------|-------------------:|----------------------:|
+| rr_2025_12     | 2025-12-28 |        9.29 | trend | lightgbm |              0.065 |                -0.065 |
+| rev_2025fy     | 2025-12-31 |       11.71 | trend | lightgbm |             -0.017 |                -0.051 |
+| rr_2026_02     | 2026-02-09 |       15.43 | trend | pca      |              0.36  |                 0.325 |
+| rr_2026_03     | 2026-02-22 |        1.86 | pca   | rf       |              0.16  |                 0.238 |
+| rr_2026_04     | 2026-03-20 |        3.71 | pls   | midas    |              0.596 |                -0.172 |
+| rev_2026q1     | 2026-03-31 |        7.29 | pls   | rf       |              0.219 |                 0.09  |
+| rr_2026_05     | 2026-05-15 |        8    | midas | midas    |             -0.467 |                -0.455 |
+| rev_2026q2     | 2026-06-30 |        8.57 | midas | midas    |              0.057 |                -0.002 |
+| rev_2026q3     | 2026-09-30 |       11.14 | mlp   | lasso    |             -0.351 |                -0.214 |
+| rr_2026_09_s1a | 2026-09-30 |        9.14 | mlp   | lasso    |             -0.648 |                -0.45  |
+| rr_2026_10_s1a | 2026-10-31 |       13.57 | mlp   | lasso    |             -1.041 |                -0.351 |
+
+H2 2026 targets, % error (+ = forecast too high):
+
+| model                         |   rev_2026q3 |   rr_2026_09_s1a |   rr_2026_10_s1a |
+|:------------------------------|-------------:|-----------------:|-----------------:|
+| AUTO (pooled)                 |         23.9 |             56.9 |             42   |
+| stack (pooled)                |         28.9 |             66.7 |             85.9 |
+| AUTO (own)                    |         42.1 |             91.2 |            183.1 |
+| stack (own)                   |         42.1 |             91.2 |            183.1 |
+| SS claims only (panel labels) |         26.8 |             51.6 |             52   |
+| A claims only                 |         38.3 |             64   |             71   |
+| E OpenRouter tokens x price   |        -20.8 |            -31.3 |             49.4 |
+| G GitHub new-repo share       |          1.2 |             13.2 |              0.5 |
+| naive last claim              |          3.8 |              0   |            -12.3 |
+| P panel pca (pooled)          |         78.6 |            161.9 |             55.9 |
+| P panel ridge (pooled)        |         33.4 |             76.1 |             20.2 |
+| trend (pooled)                |         37.5 |             86.5 |            113.2 |
+| ridge (pooled)                |         37.2 |             85   |            -15.9 |
+| lasso (pooled)                |         23.9 |             56.9 |             42   |
+| enet (pooled)                 |         14.6 |             37.5 |             34.4 |
+| pca (pooled)                  |         42.7 |             96.5 |            130.8 |
+| pls (pooled)                  |         16.5 |             39.1 |             15.5 |
+| bayes_ridge (pooled)          |          1   |             12.7 |            -16.2 |
+| ard (pooled)                  |          3.2 |             15.8 |             -0.6 |
+| kernel_ridge (pooled)         |         37.4 |             86.1 |            111.4 |
+| gp (pooled)                   |         37.4 |             86.1 |            111.4 |
+| knn (pooled)                  |         35.7 |             82.3 |             84.9 |
+| rf (pooled)                   |         38.2 |             83.8 |             84.9 |
+| extra_trees (pooled)          |         40.4 |             91.9 |            123.8 |
+| hgb (pooled)                  |         35.7 |             81.5 |             74.7 |
+| lightgbm (pooled)             |         33.7 |             76.9 |             75   |
+| xgboost (pooled)              |         36.3 |             82   |             84.8 |
+| mlp (pooled)                  |         28.4 |             54.3 |            145.9 |
+| midas (pooled)                |         32.3 |             74.9 |             91.9 |
+
+Paired differences in |log error| (`B vs A`: negative = B better; 90% bootstrap interval):
+
+| rule       | comparison                                      |   n |   mean_diff |   ci90_lo |   ci90_hi |   improved |   worse |
+|:-----------|:------------------------------------------------|----:|------------:|----------:|----------:|-----------:|--------:|
+| period_end | AUTO (pooled) vs A claims only                  |  11 |      -0.005 |    -0.057 |     0.051 |          5 |       6 |
+| period_end | AUTO (pooled) vs E OpenRouter tokens x price    |  11 |       0.064 |     0.01  |     0.121 |          3 |       8 |
+| period_end | AUTO (pooled) vs G GitHub new-repo share        |  11 |       0.069 |    -0.064 |     0.187 |          5 |       6 |
+| period_end | AUTO (pooled) vs naive last claim               |  11 |      -0.037 |    -0.145 |     0.079 |          7 |       4 |
+| period_end | AUTO (pooled) vs SS claims only (panel labels)  |  11 |      -0.018 |    -0.064 |     0.024 |          6 |       5 |
+| period_end | AUTO (pooled) vs P panel pca (pooled)           |  11 |      -0.093 |    -0.202 |     0.012 |          7 |       4 |
+| period_end | AUTO (pooled) vs P panel ridge (pooled)         |  11 |      -0.002 |    -0.077 |     0.078 |          6 |       5 |
+| period_end | stack (pooled) vs A claims only                 |  11 |       0.003 |    -0.029 |     0.035 |          4 |       7 |
+| period_end | stack (pooled) vs E OpenRouter tokens x price   |  11 |       0.071 |     0.029 |     0.113 |          2 |       9 |
+| period_end | stack (pooled) vs G GitHub new-repo share       |  11 |       0.076 |    -0.061 |     0.212 |          4 |       7 |
+| period_end | stack (pooled) vs naive last claim              |  11 |      -0.03  |    -0.169 |     0.12  |          8 |       3 |
+| period_end | stack (pooled) vs SS claims only (panel labels) |  11 |      -0.011 |    -0.059 |     0.04  |          7 |       4 |
+| period_end | AUTO (pooled) vs AUTO (own)                     |  11 |      -0.142 |    -0.256 |    -0.043 |          8 |       3 |
+| period_end | stack (pooled) vs stack (own)                   |  11 |      -0.138 |    -0.21  |    -0.072 |          9 |       2 |
+| period_end | AUTO (pooled) vs stack (pooled)                 |  11 |      -0.007 |    -0.066 |     0.05  |          5 |       6 |
+
+Per-target log error:
+
+| target         |   AUTO (pooled) |   stack (pooled) |   AUTO (own) |   stack (own) |   SS claims only (panel labels) |   A claims only |   E OpenRouter tokens x price |   G GitHub new-repo share |   naive last claim |
+|:---------------|----------------:|-----------------:|-------------:|--------------:|--------------------------------:|----------------:|------------------------------:|--------------------------:|-------------------:|
+| rev_2025fy     |          -0.051 |           -0.037 |       -0.017 |        -0.017 |                          -0.05  |          -0.034 |                        -0.04  |                     0.127 |              0.145 |
+| rev_2025q3     |         nan     |          nan     |      nan     |       nan     |                         nan     |          -0.315 |                        -0.378 |                    -0.252 |              0.603 |
+| rev_2026q1     |           0.09  |            0.067 |        0.219 |         0.219 |                          -0.068 |          -0.021 |                        -0.04  |                     0.118 |              0.237 |
+| rev_2026q2     |          -0.002 |           -0.052 |        0.057 |        -0.094 |                          -0.247 |          -0.12  |                        -0.127 |                     0.558 |              0.115 |
+| rev_2026q3     |          -0.214 |           -0.254 |       -0.351 |        -0.351 |                          -0.237 |          -0.324 |                         0.234 |                    -0.012 |             -0.038 |
+| rr_2025_10     |         nan     |          nan     |      nan     |       nan     |                         nan     |          -0.44  |                        -0.517 |                    -0.113 |              0.847 |
+| rr_2025_12     |          -0.065 |           -0.012 |        0.065 |         0.065 |                           0.043 |           0.04  |                        -0.003 |                     0.101 |              0.251 |
+| rr_2026_02     |           0.325 |            0.261 |        0.36  |         0.36  |                           0.374 |           0.363 |                         0.097 |                     0.113 |              0.693 |
+| rr_2026_03     |           0.238 |            0.231 |        0.16  |         0.198 |                           0.242 |           0.217 |                         0.141 |                     0.211 |              0.305 |
+| rr_2026_04     |          -0.172 |            0.231 |        0.596 |         0.596 |                           0.207 |           0.108 |                         0.081 |                     0.192 |              0.457 |
+| rr_2026_05     |          -0.455 |           -0.218 |       -0.467 |        -0.425 |                          -0.31  |          -0.206 |                         0.171 |                     0.098 |              0.449 |
+| rr_2026_09_s1a |          -0.45  |           -0.511 |       -0.648 |        -0.648 |                          -0.416 |          -0.494 |                         0.376 |                    -0.124 |              0     |
+| rr_2026_10_s1a |          -0.351 |           -0.62  |       -1.041 |        -1.041 |                          -0.419 |          -0.537 |                        -0.401 |                    -0.005 |              0.132 |
+
+### Stack weights (mean over targets; members with any mean weight > 0.005)
+
+|                           |   trend |   lasso |   enet |   pca |   pls |   kernel_ridge |   knn |    rf |   lightgbm |   mlp |   midas |
+|:--------------------------|--------:|--------:|-------:|------:|------:|---------------:|------:|------:|-----------:|------:|--------:|
+| ('period_end', 'own')     |   0.273 |   0.048 |   0    | 0.043 | 0.182 |          0     | 0     | 0     |      0     | 0.342 |   0.112 |
+| ('period_end', 'pooled')  |   0.08  |   0.03  |   0.06 | 0.127 | 0.005 |          0.033 | 0.011 | 0.271 |      0.163 | 0     |   0.219 |
+| ('publication', 'own')    |   0.071 |   0.075 |   0    | 0.068 | 0.071 |          0     | 0     | 0     |      0     | 0.654 |   0.061 |
+| ('publication', 'pooled') |   0     |   0     |   0    | 0.053 | 0.009 |          0.026 | 0.017 | 0.135 |      0.287 | 0     |   0.474 |
+
+### AUTO's picks (number of Anthropic targets)
+
+|                           |   lasso |   lightgbm |   midas |   mlp |   pca |   pls |   rf |   trend |
+|:--------------------------|--------:|-----------:|--------:|------:|------:|------:|-----:|--------:|
+| ('period_end', 'own')     |       0 |          0 |       2 |     3 |     1 |     2 |    0 |       3 |
+| ('period_end', 'pooled')  |       3 |          2 |       3 |     0 |     1 |     0 |    2 |       0 |
+| ('publication', 'own')    |       0 |          0 |       1 |     9 |     2 |     1 |    0 |       1 |
+| ('publication', 'pooled') |       9 |          0 |       1 |     0 |     1 |     0 |    3 |       0 |
+
 ## Second test set: OpenAI claims (g_spec)
 
 OpenAI's included, non-forecast point total claims (all tiers), pooled training only. The naive last
@@ -437,12 +839,125 @@ AUTO's picks (number of OpenAI targets):
 | ('period_end', 'pooled')  |             2 |    0 |     1 |              0 |          1 |    4 |       1 |       6 |         0 |
 | ('publication', 'pooled') |             3 |    1 |     2 |              1 |          1 |    4 |       1 |       1 |         1 |
 
+## Second test set: OpenAI claims (all)
+
+OpenAI's included, non-forecast point total claims (all tiers), pooled training only. The naive last
+claim here is the panel's own (`naive last claim (panel)`, neutral crossing position).
+
+### publication
+
+| model                         |   n |   mae_log |   n_common |   mae_log_common |   bias_log_common |
+|:------------------------------|----:|----------:|-----------:|-----------------:|------------------:|
+| AUTO (pooled)                 |  15 |     0.105 |         15 |            0.105 |            -0.022 |
+| stack (pooled)                |  15 |     0.096 |         15 |            0.096 |            -0.037 |
+| SS claims only (panel labels) |  16 |     0.124 |         15 |            0.101 |            -0.008 |
+| naive last claim (panel)      |  16 |     0.217 |         15 |            0.16  |             0.143 |
+
+Members (pooled), spread and AUTO's rank:
+
+| model        |   pooled |   rank_pooled |
+|:-------------|---------:|--------------:|
+| knn          |    0.076 |             1 |
+| enet         |    0.077 |             2 |
+| kernel_ridge |    0.079 |             3 |
+| lasso        |    0.079 |             4 |
+| trend        |    0.08  |             5 |
+| ridge        |    0.083 |             6 |
+| pca          |    0.083 |             7 |
+| pls          |    0.089 |             8 |
+| gp           |    0.091 |             9 |
+| stack        |    0.096 |           nan |
+| bayes_ridge  |    0.096 |            10 |
+| extra_trees  |    0.096 |            11 |
+| ard          |    0.098 |            12 |
+| rf           |    0.102 |            13 |
+| AUTO         |    0.105 |           nan |
+| mlp          |    0.106 |            14 |
+| xgboost      |    0.108 |            15 |
+| lightgbm     |    0.11  |            16 |
+| midas        |    0.112 |            17 |
+| hgb          |    0.114 |            18 |
+
+| pool   |   n_targets |   n_members | best member (optimistic)   |   best |   p25 |   median |   p75 |   worst | worst member   |   AUTO |   AUTO rank among members |   stack |   LOO best-of-zoo |
+|:-------|------------:|------------:|:---------------------------|-------:|------:|---------:|------:|--------:|:---------------|-------:|--------------------------:|--------:|------------------:|
+| pooled |          15 |          18 | knn                        |  0.076 |  0.08 |    0.093 | 0.105 |   0.114 | hgb            |  0.105 |                        14 |   0.096 |             0.084 |
+
+| rule        | comparison                                      |   n |   mean_diff |   ci90_lo |   ci90_hi |   improved |   worse |
+|:------------|:------------------------------------------------|----:|------------:|----------:|----------:|-----------:|--------:|
+| publication | AUTO (pooled) vs SS claims only (panel labels)  |  15 |       0.004 |    -0.006 |     0.016 |          7 |       7 |
+| publication | AUTO (pooled) vs naive last claim (panel)       |  15 |      -0.055 |    -0.105 |    -0.006 |         10 |       5 |
+| publication | stack (pooled) vs SS claims only (panel labels) |  15 |      -0.005 |    -0.034 |     0.021 |          7 |       7 |
+| publication | stack (pooled) vs naive last claim (panel)      |  15 |      -0.064 |    -0.124 |    -0.003 |         10 |       5 |
+| publication | AUTO (pooled) vs stack (pooled)                 |  15 |       0.009 |    -0.008 |     0.031 |          3 |       7 |
+
+### period_end
+
+| model                         |   n |   mae_log |   n_common |   mae_log_common |   bias_log_common |
+|:------------------------------|----:|----------:|-----------:|-----------------:|------------------:|
+| AUTO (pooled)                 |  15 |     0.095 |         15 |            0.095 |             0.022 |
+| stack (pooled)                |  15 |     0.08  |         15 |            0.08  |            -0.004 |
+| SS claims only (panel labels) |  16 |     0.1   |         15 |            0.075 |             0.031 |
+| naive last claim (panel)      |  16 |     0.254 |         15 |            0.199 |             0.199 |
+
+Members (pooled), spread and AUTO's rank:
+
+| model        |   pooled |   rank_pooled |
+|:-------------|---------:|--------------:|
+| enet         |    0.071 |             1 |
+| lasso        |    0.072 |             2 |
+| knn          |    0.073 |             3 |
+| trend        |    0.073 |             4 |
+| ridge        |    0.078 |             5 |
+| extra_trees  |    0.078 |             6 |
+| kernel_ridge |    0.08  |             7 |
+| stack        |    0.08  |           nan |
+| gp           |    0.082 |             8 |
+| rf           |    0.085 |             9 |
+| mlp          |    0.086 |            10 |
+| pca          |    0.088 |            11 |
+| pls          |    0.088 |            12 |
+| hgb          |    0.088 |            13 |
+| ard          |    0.089 |            14 |
+| bayes_ridge  |    0.09  |            15 |
+| xgboost      |    0.091 |            16 |
+| lightgbm     |    0.095 |            17 |
+| AUTO         |    0.095 |           nan |
+| midas        |    0.099 |            18 |
+
+| pool   |   n_targets |   n_members | best member (optimistic)   |   best |   p25 |   median |   p75 |   worst | worst member   |   AUTO |   AUTO rank among members |   stack |   LOO best-of-zoo |
+|:-------|------------:|------------:|:---------------------------|-------:|------:|---------:|------:|--------:|:---------------|-------:|--------------------------:|--------:|------------------:|
+| pooled |          15 |          18 | enet                       |  0.071 | 0.078 |    0.086 | 0.089 |   0.099 | midas          |  0.095 |                        18 |    0.08 |               0.1 |
+
+| rule       | comparison                                      |   n |   mean_diff |   ci90_lo |   ci90_hi |   improved |   worse |
+|:-----------|:------------------------------------------------|----:|------------:|----------:|----------:|-----------:|--------:|
+| period_end | AUTO (pooled) vs SS claims only (panel labels)  |  15 |       0.019 |     0.003 |     0.036 |          4 |      11 |
+| period_end | AUTO (pooled) vs naive last claim (panel)       |  15 |      -0.104 |    -0.186 |    -0.028 |         10 |       5 |
+| period_end | stack (pooled) vs SS claims only (panel labels) |  15 |       0.005 |    -0.026 |     0.032 |          4 |      11 |
+| period_end | stack (pooled) vs naive last claim (panel)      |  15 |      -0.118 |    -0.203 |    -0.038 |         12 |       3 |
+| period_end | AUTO (pooled) vs stack (pooled)                 |  15 |       0.014 |    -0.006 |     0.038 |          9 |       6 |
+
+AUTO's picks (number of OpenAI targets):
+
+|                           |   extra_trees |   hgb |   lasso |   lightgbm |   midas |   mlp |   rf |   trend |   xgboost |
+|:--------------------------|--------------:|------:|--------:|-----------:|--------:|------:|-----:|--------:|----------:|
+| ('period_end', 'pooled')  |             0 |     1 |       3 |          4 |       2 |     0 |    3 |       2 |         0 |
+| ('publication', 'pooled') |             1 |     1 |       3 |          1 |       3 |     2 |    2 |       1 |         1 |
+
 ## Run notes
 
 - Packages: scikit-learn 1.9.1, lightgbm 4.7.0, xgboost 3.4.1. Members dropped: none.
 - Every member single-threaded (OMP_NUM_THREADS=1); 4 worker processes across targets.
 - g_spec / publication: 30 targets forecast; summed job time 14.7 CPU-minutes (about a quarter of that in wall time on 4 workers).
 - g_spec / period_end: 27 targets forecast; summed job time 12.7 CPU-minutes (about a quarter of that in wall time on 4 workers).
+- all / publication: 30 targets forecast; summed job time 10.3 CPU-minutes (about a quarter of that in wall time on 4 workers).
+- all / period_end: 27 targets forecast; summed job time 8.2 CPU-minutes (about a quarter of that in wall time on 4 workers).
+- Feature set `all`: 43 columns of `features.FEATURE_SETS['all']`, 33 features after the protocol's mapping (duplicate change columns dropped; changes and rates cumulated); each also gets the three MIDAS terms.
+- The first `all` run was stopped and discarded: `features.py` was being finalised by another sub-task
+  while it ran, and its workers had loaded an earlier draft. The `all` results here are a rerun on the
+  committed feature store (commit fd0c449). The g_spec columns of that store equal those of the original
+  store (checked at 9 vintages for both companies), so the earlier g_spec run stands.
+- The look-ahead guarantee of the extra `all` columns rests on `features.py`'s as-of filter and its own
+  tests; this module's end-to-end no-look-ahead test covers the g_spec run.
 - The MIDAS member was revised once before the first backtest (see the protocol in `model_zoo.py`): the
   first draft put lags 0..13 under a single Almon polynomial, which cannot represent a contemporaneous-only
   effect; a synthetic unit test showed this. No test target had been forecast at that point.

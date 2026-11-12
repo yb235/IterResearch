@@ -277,18 +277,73 @@ def openai_section(fs: str, z: pd.DataFrame) -> list[str]:
     return out
 
 
-def feature_set_comparison(zs: dict) -> list[str]:
-    if len(zs) < 2 or "g_spec" not in zs:
+def _r3(x):
+    return f"{x:.3f}" if isinstance(x, (float, np.floating)) and np.isfinite(x) else x
+
+
+def side_by_side(zs: dict) -> list[str]:
+    """Every feature set next to the others: headline models, member spread, members, pairs, OpenAI."""
+    if len(zs) < 2:
         return []
-    out = ["## Feature sets compared (Anthropic targets, pooled)", ""]
-    rows = []
+    fss = list(zs)
+    members_p = [f"{m} (pooled)" for m in mz.MEMBERS]
+    parts, refs = [], None
     for fs, z in zs.items():
-        a = z[(z.company == "anthropic")].assign(model=lambda x: x.label + " [" + fs + "]")
-        rows.append(a)
-    d = pd.concat(rows, ignore_index=True)
+        a = anthropic_table(z)
+        parts.append(a[a.model.isin(HEAD + members_p)].assign(model=lambda x, fs=fs: x.model + " [" + fs + "]"))
+        if refs is None:
+            refs = a[a.model.isin([SS] + REFS + [NAIVE])]
+    d = pd.concat(parts + [refs], ignore_index=True)
+    out = ["## Feature sets side by side", "",
+           "Same protocol, same zoo, same AUTO rule and controls; only the feature columns differ (g_spec: the 8",
+           "features of sub-task G; all: every column of `features.FEATURE_SETS[\"all\"]`, mapped by the protocol's",
+           "rule). Mean |log error| on the Anthropic targets that every model below forecast (per rule). Members:",
+           "pooled. `best member` is chosen after seeing the test errors and is optimistic.", ""]
+    rows = {}
     for rule in RULES:
-        comps = [(f"{m} [g_spec]", f"{m} [{fs}]") for fs in zs if fs != "g_spec" for m in (AUTO, STACK)]
-        out += [f"### {rule}", "", pairs_table(d, rule, comps).round(3).to_markdown(index=False), ""]
+        g = d[d.rule == rule]
+        heads = [f"{m} [{fs}]" for fs in fss for m in HEAD] + [SS] + REFS + [NAIVE]
+        common = common_targets(g, heads)
+        g = g[g.target.isin(common)]
+        mae = g.groupby("model").log_err.apply(lambda x: x.abs().mean())
+        for fs in fss:
+            col = f"{rule}: {fs} (n={len(common)})"
+            mem = mae.reindex([f"{m} (pooled) [{fs}]" for m in mz.MEMBERS]).dropna()
+            vals = {m: mae.get(f"{m} [{fs}]", np.nan) for m in HEAD}
+            vals.update({"best member (optimistic)": mem.min(), "median member": mem.median(), "worst member": mem.max(),
+                         "best member is": mem.idxmin().split(" (")[0] if len(mem) else ""})
+            vals.update({r: mae.get(r, np.nan) for r in [SS] + REFS + [NAIVE]})
+            rows[col] = vals
+    t = pd.DataFrame(rows).map(_r3)
+    out += ["### Anthropic targets", "", t.to_markdown(), ""]
+    mt = {}
+    for rule in RULES:
+        g = d[d.rule == rule]
+        common = common_targets(g, [f"{m} [{fs}]" for fs in fss for m in HEAD])
+        g = g[g.target.isin(common)]
+        for fs in fss:
+            mt[f"{rule}: {fs}"] = pd.Series({m: g[g.model == f"{m} (pooled) [{fs}]"].log_err.abs().mean()
+                                             for m in mz.MEMBERS})
+    out += ["Every member (pooled), mean |log error| on the targets both AUTO versions forecast:", "",
+            pd.DataFrame(mt).round(3).to_markdown(), ""]
+    comps = [(f"{m} [g_spec]", f"{m} [{fs}]") for fs in fss if fs != "g_spec" for m in HEAD]
+    for rule in RULES:
+        out += [f"Paired, {rule} (`B vs A`: negative = B better; 90% bootstrap interval):", "",
+                pairs_table(d, rule, comps).round(3).to_markdown(index=False), ""]
+    # OpenAI
+    orows = {}
+    for rule in RULES:
+        for fs, z in zs.items():
+            o = z[(z.company == "openai") & (z.rule == rule)].assign(model=lambda x: x.label)
+            names = [AUTO, STACK, SS, mz.NAIVE_NAME]
+            common = common_targets(o, names)
+            o = o[o.target.isin(common)]
+            mem = pd.Series({m: o[o.model == f"{m} (pooled)"].log_err.abs().mean() for m in mz.MEMBERS}).dropna()
+            vals = {m: o[o.model == m].log_err.abs().mean() for m in names}
+            vals.update({"best member (optimistic)": mem.min(), "median member": mem.median(),
+                         "best member is": mem.idxmin() if len(mem) else ""})
+            orows[f"{rule}: {fs} (n={len(common)})"] = vals
+    out += ["### OpenAI targets (pooled)", "", pd.DataFrame(orows).map(_r3).to_markdown(), ""]
     return out
 
 
@@ -308,6 +363,19 @@ def run_notes(zs: dict) -> list[str]:
             if len(g):
                 out.append(f"- {fs} / {rule}: {g.target.nunique()} targets forecast; summed job time "
                            f"{g.job_seconds.sum() / 60:.1f} CPU-minutes (about a quarter of that in wall time on 4 workers).")
+    for fs in zs:
+        if fs != "g_spec":
+            src = mz.F.FEATURE_SETS.get(fs, [])
+            out.append(f"- Feature set `{fs}`: {len(src)} columns of `features.FEATURE_SETS['{fs}']`, "
+                       f"{len(mz.feature_spec(fs))} features after the protocol's mapping (duplicate change columns "
+                       "dropped; changes and rates cumulated); each also gets the three MIDAS terms.")
+    if "all" in zs:
+        out += ["- The first `all` run was stopped and discarded: `features.py` was being finalised by another sub-task",
+                "  while it ran, and its workers had loaded an earlier draft. The `all` results here are a rerun on the",
+                "  committed feature store (commit fd0c449). The g_spec columns of that store equal those of the original",
+                "  store (checked at 9 vintages for both companies), so the earlier g_spec run stands.",
+                "- The look-ahead guarantee of the extra `all` columns rests on `features.py`'s as-of filter and its own",
+                "  tests; this module's end-to-end no-look-ahead test covers the g_spec run."]
     out += ["- The MIDAS member was revised once before the first backtest (see the protocol in `model_zoo.py`): the",
             "  first draft put lags 0..13 under a single Almon polynomial, which cannot represent a contemporaneous-only",
             "  effect; a synthetic unit test showed this. No test target had been forecast at that point.",
@@ -330,11 +398,11 @@ def report() -> str:
            "predictions. `pooled` = Anthropic + OpenAI pairs; `own` = Anthropic only (pre-declared control).",
            "Errors are log(actual / forecast); negative = forecast too high. Filing rows are never inputs.",
            f"Feature sets in this report: {', '.join(fss)}.", ""]
+    out += side_by_side(zs)
     for fs, z in zs.items():
         out += [f"## Anthropic targets ({fs})", ""] + anthropic_section(fs, z)
     for fs, z in zs.items():
         out += openai_section(fs, z)
-    out += feature_set_comparison(zs)
     out += run_notes(zs)
     return "\n".join(out) + "\n"
 
