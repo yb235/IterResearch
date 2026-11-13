@@ -91,9 +91,14 @@ def test_reports_unchanged_targets_match_no_filing_run(model, variant, rule):
     same = j[j.n_filing_evidence == 0]
     assert len(same) >= 6
     assert (same.forecast_pub == same.forecast_nf).all()            # bit-identical mean
-    # the sd may move by the uncommitted model.py fix (revenue noise scaled by the forecast, after N's runs)
-    w_nf, w_pub = same.q90_nf - same.q10_nf, same.q90_pub - same.q10_pub
-    assert ((w_pub / w_nf - 1).abs() < 1e-4).all()
+    # run-rate intervals reproduce exactly; revenue sds move only by the uncommitted model.py fix (made after
+    # N's runs): noise (s y)^2 -> (s mu)^2, s = gaap log_sd, y = actual, mu = forecast
+    rr, rev = same[same.metric_nf == "run_rate"], same[same.metric_nf == "revenue"]
+    assert (rr.q10_pub == rr.q10_nf).all() and (rr.q90_pub == rr.q90_nf).all()
+    s = config.TIERS["gaap"]["log_sd"]
+    sd_nf, sd_pub = (rev.q90_nf - rev.q10_nf) / 2.5632, (rev.q90_pub - rev.q10_pub) / 2.5632
+    pred = (sd_nf ** 2 + s ** 2 * (rev.forecast_nf ** 2 - rev.actual_nf ** 2)) ** 0.5
+    assert ((sd_pub / pred - 1).abs() < 1e-9).all()
     assert (j[j.n_filing_evidence > 0].vintage_pub >= str(FIRST_FILING_PUBLIC.date())).all()
 
 

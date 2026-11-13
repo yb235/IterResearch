@@ -57,18 +57,21 @@ def main():
                 t = time.time()
                 mu0, sd0, n0, vint = forecast(df, target, rule, p)
                 mu3, sd3, n3, _ = forecast(df3, target, rule, p)
-                csv = pd.read_csv(os.path.join(config.OUTPUT_DIR, f"forecast_pubfilings_{model}_iv115_{rule}_{ASOF}.csv"))
-                r = csv[csv.target == target].iloc[0]
-                metric = r.metric
-                fc_csv = r.forecast
-                fc0 = math.exp(mu0) if metric == "run_rate" else mu0
+                fc0 = math.exp(mu0) if target.startswith("rr_") else mu0
                 rows.append({"model": model, "target": target, "rule": rule, "vintage": vint.date(),
                              "mu": mu0, "sd": sd0, "mu_x3": mu3, "sd_x3": sd3, "n_ev": n0, "n_ev_x3": n3,
-                             "abs_diff_mu": abs(mu3 - mu0), "abs_diff_sd": abs(sd3 - sd0),
-                             "forecast_csv": fc_csv, "rel_diff_vs_csv": abs(fc0 / fc_csv - 1),
+                             "abs_diff_mu": abs(mu3 - mu0), "abs_diff_sd": abs(sd3 - sd0), "forecast": fc0,
                              "seconds": round(time.time() - t)})
                 print(rows[-1], flush=True)
     d = pd.DataFrame(rows)
+    # the unmodified forecast must equal the row of the main pub run (read last: those runs may finish later)
+    fc_csv = []
+    for r in d.itertuples():
+        f = os.path.join(config.OUTPUT_DIR, f"forecast_pubfilings_{r.model}_iv115_{r.rule}_{ASOF}.csv")
+        csv = pd.read_csv(f) if os.path.exists(f) else None
+        fc_csv.append(csv[csv.target == r.target].forecast.iloc[0] if csv is not None else float("nan"))
+    d["forecast_csv"] = fc_csv
+    d["rel_diff_vs_csv"] = (d.forecast / d.forecast_csv - 1).abs()
     d.to_csv(out, index=False)
     print(d.to_string())
 

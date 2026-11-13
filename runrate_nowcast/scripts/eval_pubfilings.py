@@ -41,6 +41,38 @@ H2 = forecast_eval.H2_TARGETS
 Z80 = 1.2816
 
 
+# Written after the runs, from the tables this script prints (the numbers in the tables are authoritative).
+READING = [
+    "## Reading (written after the runs)", "",
+    "- Publication rule, 9 changed targets: using the public filing numbers lowers mean |log error| for A (0.076 ->",
+    "  0.031), B (0.144 -> 0.060), E (0.098 -> 0.046) and Bayes (0.123 -> 0.059); the paired 90% intervals exclude",
+    "  zero for all four. G (0.034 -> 0.033) and R (0.055 -> 0.044) barely move: they were already close.",
+    "- H2 2026 (3 targets, publication): every model improves (A 0.157 -> 0.043, B 0.336 -> 0.114, Bayes 0.276 -> 0.111),",
+    "  but none beats the naive last claim, which also improves (0.056 -> 0.041). B and Bayes are still worse than the",
+    "  naive (paired +0.07, intervals above zero); A, E, G, R are level with it. B still puts the Oct 31 run-rate at",
+    "  90.7 (actual 81, outside its 80% interval) with Q3 GAAP, Sacra ~70, SemiAnalysis ~74 and the WSJ '>80' in hand.",
+    "- Period_end rule, 3 changed targets: mixed. All of the gain is rr_2026_10_s1a (A 112 -> 76.7, B 159 -> 115,",
+    "  E 116 -> 89.4, Bayes 145 -> 122). rev_2026q3 and rr_2026_09_s1a, whose only new input is Fortune's Q1-2026",
+    "  revenue (4.73), get slightly worse for most models (G rev_2026q3 +0.023 -> +0.085; Bayes rr_2026_09_s1a",
+    "  -0.439 -> -0.488). Only E's interval excludes zero on the improving side; G's excludes zero on the worse side.",
+    "- The six S-1 revenue targets forecast on 2026-10-25 see one new row, Fortune's Q1-2026 4.73 (2026-09-30): the",
+    "  error shrinks on 5 of 6 for A, B and E, 4 of 6 for R and Bayes, 3 of 6 for G. The moves are small (at most 0.016",
+    "  log for A, 0.053 for G).",
+    "- 80% coverage: publication A 0.73 -> 0.80, B 0.60 -> 0.67, E 0.87 -> 1.00, Bayes 0.80 -> 0.93, G and R",
+    "  unchanged; period_end unchanged for every model.",
+    "- Point sensitivity (A B E G R): same direction. On the publication rule's changed targets B (-0.066), E (-0.050)",
+    "  and R (-0.011) gain about as much as under iv115; A gains half as much (-0.021, interval touches zero) because",
+    "  A's no-filing point run was already closer; G is flat (+0.005).",
+    "- Every target without a filing row in its pub evidence reproduces N's forecast mean bit for bit (check below).",
+    "- Caveats: (a) rr_2026_10_semi (filing = 2) may be Q3 GAAP annualized (its notes say so); with rev_2026q3 also in",
+    "  the evidence for the run-rate targets that double-counts one number, and it is what the pub naive carries",
+    "  forward for rr_2026_10_s1a (74). (b) rev_2026q1's value 4.729 is noted as derived with S-1/A No. 1 numbers",
+    "  (2026-11-02) but dated 2026-10-26, so it enters rev_2026q3's evidence (vintage 2026-11-01). Replacing it with the",
+    "  10-26-derivable 16.3 - 11.555 = 4.745 moves model A's rev_2026q3 forecast from 17.831 to 17.833 and the run-rate",
+    "  forecasts by < 0.01%: immaterial, but the row's date is generous. (c) 9 / 3 targets, one per number, strongly",
+    "  correlated across models: the intervals are descriptive, not evidence of a general effect.", ""]
+
+
 def path(model, variant, rule, evidence):
     pre = "forecast_interval" if evidence == "nofiling" else "forecast_pubfilings"
     return os.path.join(REP, f"{pre}_{model}_{variant}_{rule}_{ASOF}.csv")
@@ -108,6 +140,12 @@ def identity(d: pd.DataFrame) -> pd.DataFrame:
         rel_fc = (b.loc[common, "forecast"] / a.loc[common, "forecast"] - 1).abs()
         rel_sd = (b.loc[common, "sd"] / a.loc[common, "sd"] - 1).abs()
         flips = [t for t in common if a.loc[t, "in80"] != b.loc[t, "in80"]]
+        # what the model.py fix predicts for N's revenue sd: base_var (s y)^2 -> (s mu)^2, s = gaap log_sd
+        s_g = config.TIERS["gaap"]["log_sd"]
+        rev = [t for t in common if a.loc[t, "metric"] == "revenue"]
+        pred = {t: math.sqrt(a.loc[t, "sd"] ** 2 + s_g ** 2 * (a.loc[t, "forecast"] ** 2 - a.loc[t, "actual"] ** 2)) for t in rev}
+        resid = max([abs(b.loc[t, "sd"] / pred[t] - 1) for t in rev], default=np.nan)
+        resid_rr = max([abs(b.loc[t, "sd"] / a.loc[t, "sd"] - 1) for t in common if t not in rev], default=np.nan)
         ch = b[b.filing_evidence != ""].index.intersection(a.index)
         same_ch = [t for t in ch if abs(b.loc[t, "forecast"] / a.loc[t, "forecast"] - 1) < 1e-12]
         rows.append({"rule": rule, "model": m, "variant": v,
@@ -117,6 +155,8 @@ def identity(d: pd.DataFrame) -> pd.DataFrame:
                      "max rel diff forecast": rel_fc.max() if len(common) else np.nan,
                      "max rel diff sd": rel_sd.max() if len(common) else np.nan,
                      "sd diff on": ", ".join(t for t in common if rel_sd[t] > 1e-12) or "-",
+                     "revenue sd vs fix-predicted (max rel)": resid,
+                     "run-rate sd (max rel diff)": resid_rr,
                      "in80 flips": ", ".join(flips) or "-",
                      "n with filing rows": len(ch),
                      "with filing rows but same forecast": ", ".join(same_ch) or "-"})
@@ -195,6 +235,15 @@ def paired(c: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
+def _by_date(items) -> str:
+    """["a@2026-10-26", "b@2026-10-26", "c@2026-09-30"] -> "2026-09-30: c; 2026-10-26: a, b"."""
+    g = {}
+    for x in items:
+        oid, day = x.split("@")
+        g.setdefault(day, []).append(oid)
+    return "; ".join(f"{day}: {', '.join(sorted(ids))}" for day, ids in sorted(g.items()))
+
+
 def per_target(d: pd.DataFrame, rule: str, variant: str):
     g = d[(d.rule == rule) & d.changed & ((d.variant == variant) | (d.model == NAIVE))]
     if not len(g):
@@ -209,11 +258,10 @@ def per_target(d: pd.DataFrame, rule: str, variant: str):
         allf = pub_fil.get(t.target, [])
         notA = [x for x in allf if x not in set(str(a_fil.get(t.target, "")).split(";"))]
         info.append({"target": t.target, "vintage": t.vintage, "actual": t.actual,
-                     "filing rows in pub evidence (obs_id@published)": ", ".join(x for x in allf if x not in notA)
-                     + (f"; not in A (shares): {', '.join(notA)}" if notA else ""),
-                     "naive no-filing": f"{nv.loc['nofiling', 'forecast']:.3g} ({nv.loc['nofiling', 'naive_from'] or 'n/a'})"
-                     if "nofiling" in nv.index else "",
-                     "naive pub (carries)": f"{nv.loc['pub', 'forecast']:.3g} ({nv.loc['pub', 'naive_from']})"
+                     "filing rows in the pub evidence, by publication date": _by_date([x for x in allf if x not in notA])
+                     + (f" (B E G R bayes also: {_by_date(notA)})" if notA else ""),
+                     "naive no-filing": f"{nv.loc['nofiling', 'forecast']:.3g}" if "nofiling" in nv.index else "",
+                     "naive pub (input)": f"{nv.loc['pub', 'forecast']:.3g} ({nv.loc['pub', 'naive_from']})"
                      if "pub" in nv.index else ""})
         row = {"target": t.target, "actual": t.actual}
         for k in MODELS:
@@ -266,6 +314,7 @@ def main():
           "  never reads a filing revenue number. N's eval used the naive of A [baseline]; here both naives come from",
           "  A [iv115] (they differ from N's by the crossing position only: at most 0.021 in a revenue forecast).", ""]
 
+    L += READING
     L += ["## Mean |log error| by model x evidence x rule, iv115 (common targets)", "",
           fmt(s[["rule", "model", "evidence", "n_all", "mae_all", "bias_all", "n_post", "mae_post", "n_h2", "mae_h2",
                  "n_chg", "mae_chg", "bias_chg", "cov80", "cov80_chg", "cov50"]]), "",
@@ -296,7 +345,9 @@ def main():
     L += ["## Check: unchanged targets identical to N's no-filing run", "",
           "Targets with no filing row in their pub evidence must reproduce N exactly. `max rel diff sd` on revenue",
           "targets comes from the orchestrator's uncommitted model.py fix (observation_predictive scales revenue noise",
-          "by the forecast mean instead of the target value), which postdates N's runs; it never touches the mean.", "",
+          "by the forecast mean instead of the target value), which postdates N's runs; it never touches the mean.",
+          "`revenue sd vs fix-predicted` applies that change to N's sd (sqrt(sd^2 + 0.003^2 (forecast^2 - actual^2)))",
+          "and compares it with the pub run: ~1e-9 means the whole sd difference is the fix.", "",
           idt.to_markdown(index=False, floatfmt=".2e"), ""]
 
     ok = leaks[leaks.ok] if len(leaks) else leaks
@@ -305,9 +356,17 @@ def main():
           f"{len(leaks)} (file, target, row) entries, {len(bad)} violations of published <= vintage < target publication "
           "(dates re-read from observations.csv, not the deduplicated table). Per target and vintage (union over models):", ""]
     if len(leaks):
-        u = leaks.groupby(["target", "vintage", "target_published", "filing_row", "filing", "published", "value"]).file.nunique() \
-            .reset_index().rename(columns={"file": "n_files"})
-        L += [u.to_markdown(index=False), ""]
+        rows = []
+        for (t, v, tp), h in leaks.groupby(["target", "vintage", "target_published"]):
+            rows.append({"target": t, "vintage": v, "target published": tp,
+                         "filing rows (filing flag) by publication date": _by_date(
+                             sorted({f"{r.filing_row} ({r.filing})@{r.published}" for r in h.itertuples()})),
+                         "latest published": max(h.published), "all <= vintage": bool((h.published <= v).all()),
+                         "pub files": h.file.nunique()})
+        L += [pd.DataFrame(rows).sort_values(["vintage", "target"]).to_markdown(index=False), "",
+              "The two seg_* share rows enter B, E, G, R and bayes only (model A's frame has no share rows). Same-day "
+              "rule: under period_end the Fortune row (published 2026-09-30) enters forecasts dated 2026-09-30; the "
+              "package's convention is published <= vintage for every row, filing or not.", ""]
     s1a = leaks[leaks.target.isin(["rr_2026_09_s1a", "rr_2026_10_s1a"]) &
                 leaks.filing_row.isin(["rr_2026_09_s1a", "rr_2026_10_s1a"])] if len(leaks) else leaks
     L += [f"2. rr_2026_09_s1a and rr_2026_10_s1a (both S-1/A No. 2, published 2026-11-10): entries of one in the other's "
@@ -317,6 +376,13 @@ def main():
     ind = os.path.join(REP, f"pubfilings_answer_independence_{ASOF}.csv")
     if os.path.exists(ind):
         x = pd.read_csv(ind)
+        fc_csv = []                                  # re-read: the check may have finished before a main run
+        for r in x.itertuples():
+            f = path(r.model, PRIMARY, r.rule, "pub")
+            y = pd.read_csv(f) if os.path.exists(f) else None
+            fc_csv.append(y[y.target == r.target].forecast.iloc[0] if y is not None else np.nan)
+        x["forecast_csv"] = fc_csv
+        x["rel_diff_vs_csv"] = (x.forecast / x.forecast_csv - 1).abs()
         L += ["3. Answer independence: target value x3, same call as run_backtest (refit, profiled crossing, iv115, pub).", "",
               x[["model", "target", "rule", "vintage", "mu", "sd", "mu_x3", "sd_x3", "abs_diff_mu", "abs_diff_sd",
                  "rel_diff_vs_csv"]].to_markdown(index=False, floatfmt=".3g"), ""]
