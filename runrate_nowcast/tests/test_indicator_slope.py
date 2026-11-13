@@ -260,3 +260,25 @@ def test_p1_ignores_rows_after_vintage_and_target_value(monkeypatch, iv115, fram
     if filings and v >= pd.Timestamp("2026-09-30"):
         assert (ev0.filing != 0).any()
     assert mu_b != mu0                                    # P1 is a different model
+
+
+# --------------------------------------------------------------------------- 5. report diagnostics
+def test_serial_correlation_helpers():
+    from scipy.stats import chi2
+    e = np.array([-0.1, -0.2, 0.1, -0.3, -0.05, 0.2, 0.3, -0.1])
+    assert isl.sign_string(e) == "--+--++-" and isl.n_runs(e) == 5
+    d = e - e.mean()
+    assert isl.acf(e, 1) == pytest.approx(float(d[1:] @ d[:-1] / (d @ d)))
+    n = len(e)
+    q = n * (n + 2) * sum(isl.acf(e, k) ** 2 / (n - k) for k in (1, 2, 3))
+    assert isl.ljung_box(e, 3) == pytest.approx((q, chi2.sf(q, 3)))
+    assert 0 < isl.runs_test_p(e) <= 1 and np.isnan(isl.runs_test_p([-1, -2, -3]))
+
+
+def test_posthoc_correction_uses_only_published_errors():
+    bt = pd.DataFrame({"target": ["a", "b", "c"], "vintage": ["2026-01-01", "2026-02-01", "2026-03-01"],
+                       "log_err_model": [-0.2, -0.4, 0.1]})
+    pub = {"a": pd.Timestamp("2026-01-15"), "b": pd.Timestamp("2026-03-05"), "c": pd.Timestamp("2026-03-02")}
+    out = isl.posthoc_corrected(bt, pub)
+    # a: nothing public; b: a public (-0.2); c: a public, b not yet (published after c's vintage)
+    assert list(out) == pytest.approx([-0.2, -0.4 + 0.2, 0.1 + 0.2])

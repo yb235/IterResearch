@@ -1,0 +1,2 @@
+model,rule,evidence,comparison,n,mean_diff_abs_err,ci90_lo,ci90_hi,targets_improved,targets_worse,mean_diff_signed_err,signed_ci90_lo,signed_ci90_hi
+B,period_end,nofil,P1 vs baseline,13,-0.01177253306845282,-0.021450639620553345,-0.002114790652955787,9,4,0.01487859558705368,0.006112741707660673,0.02366029126472806
