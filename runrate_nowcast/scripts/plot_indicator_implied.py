@@ -1,4 +1,4 @@
-# Run from the repo root: PYTHONPATH=. python runrate_nowcast/scripts/plot_indicator_implied.py [evidence]
+# Run from the repo root: PYTHONPATH=. python runrate_nowcast/scripts/plot_indicator_implied.py [evidence] [replot]
 """Sub-task P: each indicator's implied revenue, in real time, against the claims (baseline vs P1).
 
 For every weekly (monthly for GitHub) reading of an indicator, published on day p:
@@ -47,6 +47,8 @@ def implied_series(model, name, variant, evidence):
         v = pd.Timestamp(r.published) - pd.Timedelta(days=1)
         prior = [f for f in F if f[0] <= v]
         p = prior[-1][2] if prior else unf
+        if (data.select(df, vintage=v).metric != "indicator").sum() < 3:
+            continue                                   # fewer claims than the backtest's minimum evidence
         rho = robust.best_crossing_position(df, unf, v)
         ev = data.select(data.with_crossing_position(df, rho), vintage=v)
         if not ((ev.metric == "indicator") & (ev.indicator == name)).any():
@@ -89,18 +91,18 @@ def plot(d, claims, path, evidence):
     for ax, (model, name, title) in zip(axes.flat, PANELS):
         for var, label, color in VARS:
             s = d[(d.indicator == name) & (d.variant == var)].sort_values("date")
-            ax.plot(s.date, s.implied.clip(0.3, 400), color=color, lw=1.6, marker="o", ms=2.5)
+            ax.plot(s.date, s.implied.clip(0.7, 300), color=color, lw=1.6, marker="o", ms=2.5)
         ax.scatter(claims.t_eff, claims.value, s=26, color=INK, zorder=5)
         ax.set_yscale("log")
-        ticks = [0.5, 1, 2, 5, 10, 20, 50, 100, 200]
-        ax.set_ylim(0.4, 400)
+        ticks = [1, 2, 5, 10, 20, 50, 100, 200]
+        ax.set_ylim(0.7, 300)
         ax.set_yticks(ticks); ax.set_yticklabels([f"${t:g}B" for t in ticks]); ax.minorticks_off()
         ax.set_xlim(pd.Timestamp("2025-01-01"), pd.Timestamp("2026-11-15"))
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %y"))
         ax.set_title(title, loc="left", fontsize=10, color=INK)
         _style(ax)
         tail = d[(d.indicator == name) & (d.date >= "2026-07-01")].groupby("variant").implied.median()
-        txt = "median since Jul 2026: " + ", ".join(f"{v} ${tail.get(v, np.nan):.0f}B" for v, _, _ in VARS)
+        txt = "median since Jul 2026: " + ", ".join(f"{v} \\${tail.get(v, np.nan):.0f}B" for v, _, _ in VARS)
         ax.text(0.01, 0.97, txt, transform=ax.transAxes, fontsize=7.5, color=INK2, va="top")
     for ax in axes[:, 0]:
         ax.set_ylabel("run-rate implied by the reading ($B, log)", color=INK2, fontsize=8.5)
@@ -112,22 +114,26 @@ def plot(d, claims, path, evidence):
              "day before it was published (rows public then; parameters from the latest per-vintage refit). "
              "Claims: point run-rate claims at their effective date.", fontsize=7.5, color=INK2)
     fig.text(0.01, 0.006, f"Lower claims as X to 1.15X; evidence set '{evidence}' (S-1 numbers "
-             f"{'never inputs' if evidence == 'nofil' else 'inputs once public'}). Values clipped to $0.3B-$400B.",
+             f"{'never inputs' if evidence == 'nofil' else 'inputs once public'}). Values clipped to \\$0.7B-\\$300B.",
              fontsize=7.5, color=INK2)
     fig.tight_layout(rect=(0, 0.035, 1, 0.95))
     fig.savefig(path, facecolor=SURFACE)
     plt.close(fig)
 
 
-def main(evidence="nofil"):
-    parts = []
-    for model, name, _ in PANELS:
-        for var, _, _ in VARS:
-            s = implied_series(model, name, var, evidence)
-            print(model, name, var, len(s), flush=True)
-            parts.append(s)
-    d = pd.concat(parts, ignore_index=True)
-    d.to_csv(os.path.join(OUTDIR, f"implied_{evidence}.csv"), index=False)
+def main(evidence="nofil", replot=False):
+    path = os.path.join(OUTDIR, f"implied_{evidence}.csv")
+    if replot:                                         # plot the saved series again
+        d = pd.read_csv(path, parse_dates=["date", "published"])
+    else:
+        parts = []
+        for model, name, _ in PANELS:
+            for var, _, _ in VARS:
+                s = implied_series(model, name, var, evidence)
+                print(model, name, var, len(s), flush=True)
+                parts.append(s)
+        d = pd.concat(parts, ignore_index=True)
+        d.to_csv(path, index=False)
     pc = point_claims(data.load_all(indicators=False))
     claims = pc[pc.metric == "run_rate"]
     suffix = "" if evidence == "nofil" else f"_{evidence}"
@@ -135,4 +141,4 @@ def main(evidence="nofil"):
 
 
 if __name__ == "__main__":
-    main(*(sys.argv[1:2] or ["nofil"]))
+    main(*(sys.argv[1:2] or ["nofil"]), replot="replot" in sys.argv[2:])

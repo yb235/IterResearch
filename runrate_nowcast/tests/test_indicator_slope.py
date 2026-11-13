@@ -282,3 +282,44 @@ def test_posthoc_correction_uses_only_published_errors():
     out = isl.posthoc_corrected(bt, pub)
     # a: nothing public; b: a public (-0.2); c: a public, b not yet (published after c's vintage)
     assert list(out) == pytest.approx([-0.2, -0.4 + 0.2, 0.1 + 0.2])
+
+
+# --------------------------------------------------------------------------- 6. saved reports
+import os  # noqa: E402
+
+REPORT_DIR = os.path.join(config.OUTPUT_DIR, f"indicator_slope_{isl.ASOF}")
+
+
+def _bt(model, variant, evidence, rule):
+    f = os.path.join(REPORT_DIR, f"bt_{model}_{variant}_{evidence}_{rule}.csv")
+    return pd.read_csv(f) if os.path.exists(f) else None
+
+
+@pytest.mark.parametrize("rule", ["publication", "period_end"])
+@pytest.mark.parametrize("model", ["B", "E", "G", "R"])
+def test_reports_baseline_reproduces_subtask_n(model, rule):
+    """The P baseline is sub-task N's primary run (iv115, no filings): same targets, bit-identical forecasts."""
+    new = _bt(model, "baseline", "nofil", rule)
+    old = os.path.join(config.OUTPUT_DIR, f"forecast_interval_{model}_iv115_{rule}_2026-11-13.csv")
+    if new is None or not os.path.exists(old):
+        pytest.skip("report not written yet")
+    old = pd.read_csv(old)
+    assert list(new.target) == list(old.target)
+    assert (new.forecast.to_numpy() == old.forecast.to_numpy()).all()
+
+
+@pytest.mark.parametrize("variant", list(isl.VARIANTS))
+@pytest.mark.parametrize("model", list(isl.MODELS))
+def test_reports_pub_equals_nofil_without_filing_rows(model, variant):
+    """Evidence set "pub" differs from "nofil" only where a filing row was public at the vintage."""
+    for rule in ("publication", "period_end"):
+        nf, pb = _bt(model, variant, "nofil", rule), _bt(model, variant, "pub", rule)
+        if nf is None or pb is None:
+            pytest.skip("report not written yet")
+        assert list(nf.target) == list(pb.target) and (nf.n_filing_evidence == 0).all()
+        j = nf.merge(pb, on="target", suffixes=("_nf", "_pub"))
+        same = j[j.n_filing_evidence_pub == 0]
+        assert len(same) >= 4
+        for c in ("forecast", "q10", "q90"):
+            assert (same[f"{c}_pub"] == same[f"{c}_nf"]).all(), c
+        assert (pd.to_datetime(j[j.n_filing_evidence_pub > 0].vintage_pub) >= pd.Timestamp("2026-09-30")).all()
