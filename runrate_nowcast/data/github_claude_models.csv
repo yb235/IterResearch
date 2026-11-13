@@ -20,3 +20,4 @@ week_start,week_end,query,total_count,incomplete,collected_at
 2026-10-05,2026-10-11,Claude Opus 5 noreply,138597,True,2026-11-13T11:14:03Z
 2026-10-05,2026-10-11,Claude Sonnet 5.5,1416765,True,2026-11-13T11:14:25Z
 2026-10-05,2026-10-11,Claude Sonnet 5 noreply,191050,True,2026-11-13T11:15:55Z
+2026-10-05,2026-10-11,Claude Haiku 5.5,45608,True,2026-11-13T11:16:17Z
