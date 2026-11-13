@@ -84,12 +84,13 @@ def check_no_leak(ev: pd.DataFrame, vintage, row) -> None:
 
 def prepublication_forecast(df: pd.DataFrame, row, params: dict | None = None, refit: bool = False,
                             min_evidence: int = 3, forecasts: bool | None = None, crossing: str | float | None = None,
-                            vintage=None):
+                            vintage=None, info: dict | None = None):
     """Forecast one claim using only rows public at the vintage, excluding its own origin.
 
     vintage defaults to the day before publication. Returns (mu, sd, n_evidence, evidence_df).
     mu and sd are in log units for run-rate claims and in $B for revenue claims. Returns None
-    if there is too little evidence.
+    if there is too little evidence. If `info` is a dict, the parameters used (after any refit)
+    are stored in info["params"].
     """
     pub = pd.Timestamp(row.published) - pd.Timedelta(days=1)
     vintage = pub if vintage is None else min(pd.Timestamp(vintage), pub)
@@ -120,6 +121,8 @@ def prepublication_forecast(df: pd.DataFrame, row, params: dict | None = None, r
             from . import altdata
             p["indicators"] = altdata.indicator_params()     # restart from catalog priors, not full-sample fits
             _, p = calibrate.fit_indicators(vint, p, verbose=False)
+    if info is not None:
+        info["params"] = p
     model = Model(p)
     queries = [(row.period_start, row.period_end)] if row.metric == "revenue" else None
     end = max(pd.Timestamp(row.t_eff), vintage)
@@ -132,11 +135,16 @@ def prepublication_forecast(df: pd.DataFrame, row, params: dict | None = None, r
 def run_backtest(df: pd.DataFrame, params: dict | None = None, refit: bool = False,
                  min_evidence: int = 3, segment_targets: bool = False,
                  forecasts: bool | None = None, target_ids=None, crossing=None,
-                 vintage_rule: str = "publication") -> pd.DataFrame:
+                 vintage_rule: str = "publication", loglik: bool = False) -> pd.DataFrame:
     """Targets: point claims from GAAP/official sources, excluding forecasts.
 
     By default only total-company run-rate and revenue are targets, so variants with and
     without the segment layer are scored on the same set.
+
+    loglik=True adds the predictive mean and sd (mu, sd: log units for run-rate, $B for revenue)
+    and the online-filter log-likelihood of the evidence at the vintage with the parameters
+    used: ll_claims (claims only) and ll_joint (claims and indicators). gamma_mixture combines
+    such runs into a model average.
     """
     full = data.select(df, filings=True)          # filings are targets, never evidence
     targets = full[full.tier.isin(TARGET_TIERS) & (full.kind == "point")
@@ -149,10 +157,17 @@ def run_backtest(df: pd.DataFrame, params: dict | None = None, refit: bool = Fal
     rows = []
     for tg in targets.itertuples():
         vint = target_vintage(tg, vintage_rule)
-        out = prepublication_forecast(df, tg, params, refit, min_evidence, forecasts, crossing, vintage=vint)
+        info = {} if loglik else None
+        out = prepublication_forecast(df, tg, params, refit, min_evidence, forecasts, crossing, vintage=vint,
+                                      info=info)
         if out is None:
             continue
         mu, sd, n_ev, ev = out
+        extra = {}
+        if loglik:
+            from .pricing import claim_loglik
+            res_f = Model(info["params"]).run(ev, smooth=False)
+            extra = {"mu": mu, "sd": sd, "ll_claims": claim_loglik(res_f), "ll_joint": float(res_f.loglik)}
         y = math.log(tg.value) if tg.metric == "run_rate" else float(tg.value)
         z = (y - mu) / sd
         nv = _naive(tg, ev)
@@ -171,9 +186,71 @@ def run_backtest(df: pd.DataFrame, params: dict | None = None, refit: bool = Fal
             "vintage": vint.date(),
             "n_evidence": n_ev, "actual": tg.value, "forecast": point, "q10": lo, "q90": hi,
             "z": z, "pit": float(norm.cdf(z)), "in50": abs(z) < 0.6745, "in80": abs(z) < 1.2816,
-            "log_err_model": err_model, "naive": naive_pt, "log_err_naive": err_naive,
+            "log_err_model": err_model, "naive": naive_pt, "log_err_naive": err_naive, **extra,
         })
     return pd.DataFrame(rows)
+
+
+def _mixture_quantile(p, w, mu, sd):
+    from scipy.optimize import brentq
+    f = lambda x: float(np.sum(w * norm.cdf((x - mu) / sd))) - p
+    lo, hi = float(np.min(mu - 10 * sd)), float(np.max(mu + 10 * sd))
+    return brentq(f, lo, hi)
+
+
+def gamma_mixture(components: dict, prior: dict | None = None, likelihood: str = "claims") -> pd.DataFrame:
+    """Average backtests run with different gamma by their evidence at each vintage.
+
+    components: {gamma: run_backtest(..., loglik=True) output}, all on the same targets and rule.
+    Per target, weight_k = prior_k exp(ll_k) / sum (ll = ll_claims, or ll_joint with
+    likelihood="joint"); the log-likelihoods use only data public at that target's vintage.
+    The forecast is the mixture of the components' normal predictives: point = mixture mean,
+    q10/q90 and PIT from the mixture CDF. Errors are scored like run_backtest.
+    """
+    from .pricing import gamma_weights_from_loglik
+    col = "ll_claims" if likelihood == "claims" else "ll_joint"
+    gs = sorted(components)
+    idx = [c.set_index("target") for c in (components[g] for g in gs)]
+    common = idx[0].index
+    for c in idx[1:]:
+        common = common.intersection(c.index)
+    rows = []
+    for t in common:
+        comp = [c.loc[t] for c in idx]
+        w = gamma_weights_from_loglik({g: float(c[col]) for g, c in zip(gs, comp)}, prior).to_numpy()
+        mu = np.array([float(c["mu"]) for c in comp])
+        sd = np.array([float(c["sd"]) for c in comp])
+        r0 = comp[0]
+        m = float(np.sum(w * mu))
+        q10, q90 = _mixture_quantile(0.1, w, mu, sd), _mixture_quantile(0.9, w, mu, sd)
+        q25, q75 = _mixture_quantile(0.25, w, mu, sd), _mixture_quantile(0.75, w, mu, sd)
+        y = math.log(r0.actual) if r0.metric == "run_rate" else float(r0.actual)
+        pit = float(np.sum(w * norm.cdf((y - mu) / sd)))
+        pit_c = min(max(pit, 1e-12), 1 - 1e-12)
+        if r0.metric == "run_rate":
+            point, lo, hi, err = math.exp(m), math.exp(q10), math.exp(q90), y - m
+        else:
+            point, lo, hi, err = m, q10, q90, math.log(y / m)
+        row = {"target": t, "metric": r0.metric, "vintage": r0.vintage, "n_evidence": r0.n_evidence,
+               "actual": r0.actual, "forecast": point, "q10": lo, "q90": hi, "z": float(norm.ppf(pit_c)),
+               "pit": pit, "in50": bool(q25 <= y <= q75), "in80": bool(q10 <= y <= q90),
+               "log_err_model": err, "naive": r0.naive, "log_err_naive": r0.log_err_naive,
+               "gamma_mean": float(np.sum(w * np.array(gs)))}
+        row.update({f"w_gamma_{g:g}": float(x) for g, x in zip(gs, w)})
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def paired_bootstrap(err_a: pd.Series, err_b: pd.Series, n_boot: int = 10000, seed: int = 0) -> dict:
+    """Mean of |err_b| - |err_a| over shared targets, with a 90% bootstrap interval (as in layer_ablation)."""
+    a, b = err_a.abs(), err_b.abs()
+    common = a.index.intersection(b.index)
+    d = (b[common] - a[common]).to_numpy()
+    rng = np.random.default_rng(seed)
+    boots = rng.choice(d, size=(n_boot, len(d)), replace=True).mean(axis=1)
+    lo, hi = np.percentile(boots, [5, 95])
+    return {"n": int(len(d)), "mean_diff_abs_err": float(d.mean()), "ci90_lo": float(lo), "ci90_hi": float(hi),
+            "targets_improved": int((d < 0).sum()), "targets_worse": int((d > 0).sum())}
 
 
 def summarize(bt: pd.DataFrame) -> dict:
