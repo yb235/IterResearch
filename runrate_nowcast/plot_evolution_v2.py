@@ -20,7 +20,7 @@ from . import calibrate, config, data
 from .model import Model, period_key
 from .plot import BLUE, GRID, INK, INK2, ORANGE, SURFACE
 
-MODELS = [("claims", "Claims only", ORANGE), ("indicators", "Claims + indicators (SDK downloads, Ramp)", BLUE)]
+MODELS = [("claims", "Claims only", ORANGE), ("indicators", "Claims + SDK download indicators", BLUE)]
 QUARTERS = [("2026Q2", ("2026-04-01", "2026-06-30"), "2026-03-08", "2026-10-25", 11.555, "2026-10-26"),
             ("2026Q3", ("2026-07-01", "2026-09-30"), "2026-06-07", "2026-11-01", 16.96, "2026-11-02")]
 
@@ -122,15 +122,20 @@ def plot(evos: list, path: str, raw: pd.DataFrame):
         _style(ax)
     handles = []
     for key, label, color in MODELS:
-        handles.append(Line2D([], [], color=color, lw=2, label=f"{label}: all data public on the date"))
+        handles.append(Line2D([], [], color=color, lw=2, label=f"{label}: rows usable under the rules, public on the date"))
         handles.append(Line2D([], [], color=color, lw=1.6, ls=(0, (4, 2.5)),
                               label=f"{label}: without direct reports of the quarter's revenue"))
     fig.legend(handles=handles, loc="upper center", ncol=2, frameon=False, fontsize=8.5, labelcolor=INK,
                bbox_to_anchor=(0.5, 1.0))
-    foot = ["Solid: forecast from every row public on that date (S-1 and S-1/A numbers are never inputs; they are "
-            "the answers). Dashed: the same rows minus direct reports of the plotted quarter's revenue.",
-            "'Over $X' claims as X to 1.15X. Parameters: full-sample fit (params.json), the only input not as of "
-            "the date. Steps change on each weekly date and on each day a run-rate or revenue claim was published."]
+    foot = ["Solid: forecast from the rows public on that date that the rules allow. Public but never inputs: S-1 and "
+            "S-1/A numbers, third-party figures that may come from them (Fortune, Sacra, SemiAnalysis), forward-looking "
+            "statements (FT, NYT),",
+            "and the 'already passed $100B' misquote. Dashed: the same rows minus direct reports of the plotted "
+            "quarter's revenue. No new claim entered the evidence between Aug 17 and Nov 01, so the lines barely move there (weekly indicator readings only).",
+            "'Over $X' claims as X to 1.15X. Ramp token data was first public on Nov 10, so it is never used here. "
+            "Steps change on each weekly date and on each day a claim was published.",
+            "Parameters: full-sample fit (params.json), not as of the date. In the strict backtest (parameters refit "
+            "at each date) the indicator model's Q3 forecast on Nov 01 is 23.0, not the 20.1 drawn here."]
     foot += notes
     for i, t in enumerate(foot):
         fig.text(0.01, 0.006 + 0.022 * (len(foot) - 1 - i), t, fontsize=7.6, color=INK2)
