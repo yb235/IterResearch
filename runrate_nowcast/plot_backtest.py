@@ -217,7 +217,131 @@ def plot_evolution(evos: list, path: str):
     return path
 
 
+PRICE_MODELS = [("A", "A claims only", AQUA, "s"), ("B", "B + raw indicators", BLUE, "o"),
+                ("C", "C + price-adjusted (gamma by evidence)", ORANGE, "^"), ("D", "D = C + GitHub commits", VIOLET, "D")]
+TIER_COLORS = {"Opus $75": "#3d2a91", "Opus $25": "#6250d6", "Opus $20": "#a597ee", "Sonnet $15": "#1f6fb8",
+               "Sonnet $10": "#7cb6ea", "Haiku": "#1baf7a", "Fable": "#eb6834"}
+
+
+def _tier(model, prices):
+    from . import pricing
+    fam = model.split()[0]
+    if fam in ("Haiku", "Fable"):
+        return fam
+    return f"{fam} ${pricing.model_price(model, 'list', prices):g}"
+
+
+def plot_price_index(path, asof="2026-11-10"):
+    """Weekly price per token (real-time, as known on each date) and the measured model mix."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from . import price_study, pricing
+    prices = pricing.load_prices()
+    tab = price_study.price_table(pd.date_range("2025-10-06", "2026-11-16", freq="D"))
+    sh = pricing.model_shares()
+    fig, axes = plt.subplots(2, 1, figsize=(12, 9), dpi=150, gridspec_kw={"height_ratios": [1.2, 1]}, sharex=True)
+    fig.patch.set_facecolor(SURFACE)
+    ax = axes[0]
+    for col, label, color, ls in (("model_list", "Per-model mix x list price (main)", ORANGE, "-"),
+                                  ("model_cache", "Per-model mix x cache-heavy basket (sensitivity)", BLUE, "-"),
+                                  ("family_opus_sonnet", "Opus/Sonnet family mix only (previous)", INK2, ":")):
+        ax.plot(tab.index, tab[col], color=color, lw=2 if ls == "-" else 1.4, ls=ls, label=label, drawstyle="steps-post")
+    cuts = prices[(prices.release_date >= "2025-11-01")]
+    for r in cuts.itertuples():
+        ax.axvline(r.release_date, color=GRID, lw=0.9, zorder=0)
+        ax.text(r.release_date, 1.13, r.model.replace("claude-", ""), rotation=90, fontsize=6.5, color=INK2,
+                va="top", ha="right")
+    t0 = sh.index[0] + pd.Timedelta(days=7) if len(sh) else None
+    if t0 is not None:
+        ax.axvspan(tab.index[0], t0, color=GRID, alpha=0.5, lw=0, zorder=0)
+        ax.text(tab.index[0], 0.62, " flat fallback:\n model names not yet\n in the trailer", fontsize=7.5, color=INK2)
+    ax.set_ylim(0.6, 1.15)
+    ax.set_ylabel("price per token, first measured week = 1", color=INK2, fontsize=9)
+    ax.set_title("Price per token of the models used in public Claude Code commits (real time: as known on each date)",
+                 loc="left", fontsize=11, color=INK)
+    ax.legend(loc="lower left", frameon=False, fontsize=8.5, labelcolor=INK)
+    _style(ax)
+    ax = axes[1]
+    if len(sh):
+        tiers = {}
+        for m in sh.columns:
+            tiers.setdefault(_tier(m, prices), []).append(m)
+        order = [t for t in TIER_COLORS if t in tiers]
+        bottom = np.zeros(len(sh))
+        x = sh.index + pd.Timedelta(days=3)
+        for t in order:
+            v = sh[tiers[t]].sum(axis=1).to_numpy()
+            ax.bar(x, v, bottom=bottom, width=6, color=TIER_COLORS[t], label=t, edgecolor=SURFACE, lw=0.3)
+            bottom += v
+        ax.set_ylim(0, 1)
+        ax.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0), frameon=False, fontsize=8.5, labelcolor=INK,
+                  title="output $/Mtok", title_fontsize=8)
+    ax.set_ylabel("share of commits naming a model", color=INK2, fontsize=9)
+    ax.set_title("Model mix by price tier, sample weeks (bars = one 7-day sample)", loc="left", fontsize=11, color=INK)
+    _style(ax)
+    fig.text(0.01, 0.005, "Source: GitHub commit search for 'Co-Authored-By: Claude <model>' (approximate counts; "
+             "prefix matches subtracted); list prices from data/model_prices.csv.", fontsize=7.5, color=INK2)
+    fig.tight_layout(rect=(0, 0.02, 1, 1))
+    fig.savefig(path, facecolor=SURFACE)
+    plt.close(fig)
+    return path
+
+
+def plot_price_study(path, asof="2026-11-10"):
+    """% error by target for variants A-D at both vintages."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+    d = pd.read_csv(os.path.join(config.OUTPUT_DIR, f"price_study_{asof}.csv"), parse_dates=["vintage"])
+    obs = data.load().set_index("obs_id")
+    d["date"] = [obs.loc[t, "period_end"] if m == "revenue" else obs.loc[t, "ref_date"] for t, m in zip(d.target, d.metric)]
+    d["pct"] = 100 * (d.forecast / d.actual - 1)
+    fig, axes = plt.subplots(2, 1, figsize=(12, 9.5), dpi=150, sharex=True)
+    fig.patch.set_facecolor(SURFACE)
+    offs = {k: (i - 1.5) * 4 for i, (k, *_) in enumerate(PRICE_MODELS)}
+    for ax, rule, title in ((axes[0], "publication", "Forecast made the day before each number was published"),
+                            (axes[1], "period_end", "Forecast made on the date the number refers to (true forecast)")):
+        sub = d[d.rule == rule]
+        parts = []
+        for key, label, color, marker in PRICE_MODELS:
+            m = sub[sub.model == key].sort_values("date")
+            if not len(m):
+                continue
+            x = pd.to_datetime(m.date) + pd.to_timedelta(offs[key], unit="D")
+            ax.vlines(x, 0, m.pct, color=color, lw=1, alpha=0.35)
+            ax.scatter(x, m.pct, marker=marker, s=34, color=color, zorder=4)
+            parts.append(f"{key} {100 * m.log_err_model.abs().mean():.0f}% (n={len(m)})")
+        ax.axhline(0, color=INK, lw=1)
+        ax.axhspan(-10, 10, color=GRID, alpha=0.45, lw=0, zorder=0)
+        for t in ("rev_2026q3", "rr_2026_09_s1a", "rr_2026_10_s1a"):
+            r = sub[(sub.model == "C") & (sub.target == t)]
+            if len(r):
+                r = r.iloc[0]
+                ax.annotate(f"{t}: C {r.forecast:.1f} vs {r.actual:g}", (pd.Timestamp(r.date), r.pct),
+                            textcoords="offset points", xytext=(-10, 10), ha="right", fontsize=7.5, color=INK2,
+                            arrowprops={"arrowstyle": "-", "color": INK2, "lw": 0.7})
+        ax.set_title(f"{title}. Mean |log error|: " + ", ".join(parts), loc="left", fontsize=10, color=INK)
+        ax.set_ylabel("forecast / actual - 1 (%)", color=INK2, fontsize=9)
+        _style(ax)
+    handles = [Line2D([], [], marker=mk, ls="", color=c, label=lb) for _, lb, c, mk in PRICE_MODELS]
+    fig.legend(handles=handles, loc="upper center", ncol=4, frameon=False, fontsize=9, labelcolor=INK,
+               bbox_to_anchor=(0.5, 1.0))
+    fig.text(0.01, 0.005, "No filing number is ever an input; parameters refit at each vintage. Targets: GAAP quarters "
+             "and FY2025 (S-1), $71B / $81B (S-1/A), official run-rate statements. Shaded: within +/-10%.",
+             fontsize=7.5, color=INK2)
+    fig.tight_layout(rect=(0, 0.02, 1, 0.96))
+    fig.savefig(path, facecolor=SURFACE)
+    plt.close(fig)
+    return path
+
+
 def run(asof="2026-11-10"):
+    extra = []
+    if os.path.exists(os.path.join(config.OUTPUT_DIR, f"price_study_{asof}.csv")):
+        extra.append(plot_price_study(os.path.join(config.OUTPUT_DIR, f"price_study_errors_{asof}.png"), asof))
+        extra.append(plot_price_index(os.path.join(config.OUTPUT_DIR, f"price_index_{asof}.png"), asof))
     d = collect(asof=asof)
     p1 = plot_errors(d, os.path.join(config.OUTPUT_DIR, f"backtest_errors_{asof}.png"))
     df_all = data.load_all()
@@ -234,4 +358,4 @@ def run(asof="2026-11-10"):
     d.to_csv(os.path.join(config.OUTPUT_DIR, f"backtest_errors_{asof}.csv"), index=False)
     pd.concat([ev2.assign(quarter="2026Q2"), ev3.assign(quarter="2026Q3")]).to_csv(
         os.path.join(config.OUTPUT_DIR, f"forecast_evolution_{asof}.csv"), index=False)
-    return d, p1, p2
+    return d, p1, p2, extra

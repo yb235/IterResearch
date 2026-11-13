@@ -19,6 +19,9 @@ python -m runrate_nowcast fit-crossing [--write]         # where "crossed $X" mi
 python -m runrate_nowcast leakcheck [--sensitivity]       # can any forecast see what it should not?
 python -m runrate_nowcast forecast-eval                   # no-filing forecast backtests, one table
 python -m runrate_nowcast plot-signals                    # charts: real-time signals vs revenue; no-filing forecast errors
+python -m runrate_nowcast price-study run --variant C --gamma 1 --rule publication   # one component backtest
+python -m runrate_nowcast price-study combine             # gamma by evidence, variants A-D, paired bootstrap
+python -m runrate_nowcast price-study nowcast --asof D [--variant C] [--register]   # Q4 2026 and 12/31 run-rate
 """
 from __future__ import annotations
 
@@ -60,11 +63,19 @@ def main(argv=None):
     p = sub.add_parser("leakcheck"); p.add_argument("--asof", default=None); p.add_argument("--sensitivity", action="store_true")
     p = sub.add_parser("forecast-eval"); p.add_argument("--asof", default=None)
     p = sub.add_parser("plot-signals"); p.add_argument("--asof", default=None)
+    p = sub.add_parser("price-study"); p.add_argument("action", choices=["run", "combine", "nowcast"])
+    p.add_argument("--variant", default="C"); p.add_argument("--gamma", type=float, default=1.0)
+    p.add_argument("--rule", default="publication"); p.add_argument("--asof", default=None)
+    p.add_argument("--register", action="store_true")
     a = ap.parse_args(argv)
 
     warnings.simplefilter("ignore")
     pd.set_option("display.width", 220)
     pd.set_option("display.max_columns", 30)
+    if a.cmd == "price-study":
+        from . import price_study as ps
+        _price_study(a, ps)
+        return
     if a.cmd == "update-data":
         from . import altdata
         altdata.update(start=a.start)
@@ -193,8 +204,9 @@ def main(argv=None):
 
     elif a.cmd == "plot-errors":
         from . import plot_backtest
-        d, p1, p2 = plot_backtest.run(f"{asof:%Y-%m-%d}")
-        print(f"-> {p1}\n-> {p2}")
+        d, p1, p2, extra = plot_backtest.run(f"{asof:%Y-%m-%d}")
+        for path in [p1, p2] + extra:
+            print(f"-> {path}")
 
     elif a.cmd == "audit":
         from . import audit
@@ -233,6 +245,40 @@ def main(argv=None):
     elif a.cmd == "score":
         sc = registry.score(df, params)
         print(sc.round(3).to_string(index=False) if len(sc) else "nothing to score yet")
+
+
+def _price_study(a, ps):
+    import json
+    if a.action == "run":
+        print("->", ps.run_component(a.variant, a.gamma, a.rule))
+    elif a.action == "combine":
+        d, summ, pairs = ps.combine()
+        d.to_csv(os.path.join(config.OUTPUT_DIR, f"price_study_{ps.ASOF}.csv"), index=False)
+        summ.to_csv(os.path.join(config.OUTPUT_DIR, f"price_study_summary_{ps.ASOF}.csv"), index=False)
+        pairs.to_csv(os.path.join(config.OUTPUT_DIR, f"price_study_pairs_{ps.ASOF}.csv"), index=False)
+        ps.price_table().to_csv(os.path.join(config.OUTPUT_DIR, f"price_index_{ps.ASOF}.csv"), date_format="%Y-%m-%d")
+        md = ps.markdown(d, summ, pairs)
+        out = os.path.join(config.OUTPUT_DIR, f"price_study_{ps.ASOF}.md")
+        with open(out, "w") as f:
+            f.write(md)
+        print(md); print(f"-> {out}")
+    elif a.action == "nowcast":
+        asof = a.asof or f"{pd.Timestamp.today():%Y-%m-%d}"
+        s = ps.nowcast(asof, a.variant)
+        print(json.dumps({k: v for k, v in s.items() if k != "components"}, indent=1))
+        for c in s["components"]:
+            print({k: (round(v, 4) if isinstance(v, float) else v) for k, v in c.items()})
+        out = os.path.join(config.OUTPUT_DIR, f"price_study_nowcast_{a.variant}_{asof}.json")
+        with open(out, "w") as f:
+            json.dump(s, f, indent=1, default=str)
+        print(f"-> {out}")
+        if a.register:
+            summ = {k: v for k, v in s.items() if k.startswith("runrate_") or k in ("revenue_quarter", "period")}
+            w = ", ".join(f"{g:g}: {x:.2f}" for g, x in s["weights"].items())
+            e = registry.register_summary(f"price_{a.variant}", asof, summ,
+                                          note=f"price study ({ps.LABELS.get(a.variant, a.variant)}); no filings as inputs; "
+                                               f"gamma weights by claim likelihood {{{w}}}")
+            print("registered", e["registered_at_utc"])
 
 
 if __name__ == "__main__":
