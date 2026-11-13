@@ -188,7 +188,7 @@ def latent(row, mu: float, sd: float, tiers: dict) -> tuple[float, float]:
     leaving the model's own mean and sd of the quantity."""
     tier = tiers[row.tier]
     if row.metric == "revenue":
-        return mu, math.sqrt(max(sd ** 2 - (tier["log_sd"] * row.value) ** 2, 0.0))
+        return mu, math.sqrt(max(sd ** 2 - (tier["log_sd"] * mu) ** 2, 0.0))   # noise is scaled by the forecast mean
     # run-rate: base_var = log_sd^2; the date term is 0 because the targets have date_sd_days = 0
     return mu - tier.get("bias", 0.0), math.sqrt(max(sd ** 2 - tier["log_sd"] ** 2, 0.0))
 

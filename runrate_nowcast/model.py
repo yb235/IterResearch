@@ -605,6 +605,9 @@ def observation_predictive(res: Result, row, model: Model) -> tuple[float, float
     if row.metric == "revenue":
         r = res.period_revenue(period_key(row.period_start, row.period_end))
         _, _, _, base_var, _ = model.obs_vector(row, res.layout)
+        # Revenue noise is proportional to the reported value; scale it by the forecast instead,
+        # so the predictive sd never depends on the (unknown) value being forecast.
+        base_var *= (r["mean"] / float(row.value)) ** 2
         return r["mean"], math.sqrt(r["sd"] ** 2 + base_var)
     H, _, offset, base_var, date_sd = model.obs_vector(row, res.layout)
     m, P = res.state(row.t_eff)

@@ -139,7 +139,7 @@ def score(df, params=None, path: str = config.REGISTRY_PATH) -> pd.DataFrame:
                 if key not in e["revenue"]:
                     continue
                 f = e["revenue"][key]
-                sd = math.sqrt(f["sd"] ** 2 + (tiers[r.tier]["log_sd"] * r.value) ** 2)
+                sd = math.sqrt(f["sd"] ** 2 + (tiers[r.tier]["log_sd"] * f["mean"]) ** 2)   # scaled by the forecast, not the actual
                 y, mu = r.value, f["mean"]
             else:
                 xr = (pd.Timestamp(r.ref_date) - fan.date.min()).days
