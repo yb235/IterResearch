@@ -16,7 +16,8 @@ One-step-ahead (onestep_*.csv: every point claim as it arrives, publication orde
 mean log error, lag-1 autocorrelation of z, Ljung-Box Q and p over lags 1-3, sign string; also by period.
 The filter's own innovations of the point claims (innov_*.csv, effective-date order) get the same statistics.
 Outputs (reports/): indicator_slope_summary_2026-11-13.csv, indicator_slope_paired_2026-11-13.csv,
-indicator_slope_onestep_2026-11-13.csv, indicator_slope_long_2026-11-13.csv, indicator_slope_params_2026-11-13.csv,
+indicator_slope_onestep_2026-11-13.csv (+ _onestep_long_), indicator_slope_innov_2026-11-13.csv,
+indicator_slope_long_2026-11-13.csv, indicator_slope_params_2026-11-13.csv,
 indicator_slope_onestep_2026-11-13.png; markdown tables printed to stdout (pasted into the report).
 """
 import warnings; warnings.simplefilter("ignore")
@@ -101,7 +102,8 @@ def ljung(z):
 
 
 def onestep():
-    parts = [pd.read_csv(f) for f in sorted(glob.glob(os.path.join(D, "onestep_*.csv")))]
+    files = [f for f in sorted(glob.glob(os.path.join(D, "onestep_*_*_*.csv"))) if not f.endswith("_long.csv")]
+    parts = [pd.read_csv(f) for f in files]
     if not parts:
         return None, None, None
     d = pd.concat(parts, ignore_index=True)
@@ -177,6 +179,22 @@ def plot_onestep(d, path, evidence="nofil"):
     plt.close(fig)
 
 
+def compact(s, e):
+    """model x variant rows; per rule: mean signed error / share too high / mean |error| / 80% coverage."""
+    rows = []
+    t = s[s.evidence == e]
+    for (m, v), g in t.groupby(["model", "variant"], observed=True):
+        r = {"model": m, "variant": isl.LABELS[v]}
+        for rule in RULES:
+            x = g[g.rule == rule]
+            if len(x):
+                x = x.iloc[0]
+                r[f"{rule} (n={int(x.n)})"] = f"{x.mean_err:+.3f} / {100 * x.share_too_high:.0f}% / {x.mae:.3f} / {x.cov80:.2f}"
+                r[f"{rule} signs, runs, acf1"] = f"`{x.signs}` {int(x.n_runs)}, {x.acf1:+.2f}"
+        rows.append(r)
+    return pd.DataFrame(rows)
+
+
 def md(df, floatfmt=".3f"):
     return df.to_markdown(index=False, floatfmt=floatfmt)
 
@@ -195,7 +213,7 @@ def main():
     d, os_sum, inn_sum = onestep()
     if d is not None:
         os_sum.to_csv(os.path.join(REP, f"indicator_slope_onestep_{ASOF}.csv"), index=False)
-        d.to_csv(os.path.join(D, "onestep_long.csv"), index=False)
+        d.to_csv(os.path.join(REP, f"indicator_slope_onestep_long_{ASOF}.csv"), index=False)
         if len(inn_sum):
             inn_sum.to_csv(os.path.join(REP, f"indicator_slope_innov_{ASOF}.csv"), index=False)
         plot_onestep(d, os.path.join(REP, f"indicator_slope_onestep_{ASOF}.png"))
@@ -207,6 +225,9 @@ def main():
         print(f"\n### evidence {e}\n")
         print(md(t[["model", "variant", "rule", "n", "mean_err", "share_too_high", "mae", "cov80", "signs", "n_runs",
                     "acf1", "posthoc_mean_err", "posthoc_mae"]]))
+    for e in EVID:
+        print(f"\n### compact {e}: mean signed log error / share too high / mean |log error| / 80% coverage\n")
+        print(compact(s, e).to_markdown(index=False))
     print("\n### paired\n")
     print(md(pr[["model", "rule", "evidence", "comparison", "n", "mean_diff_abs_err", "ci90_lo", "ci90_hi",
                  "targets_improved", "targets_worse", "mean_diff_signed_err", "signed_ci90_lo", "signed_ci90_hi"]]))

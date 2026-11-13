@@ -308,7 +308,7 @@ def test_reports_baseline_reproduces_subtask_n(model, rule):
     assert (new.forecast.to_numpy() == old.forecast.to_numpy()).all()
 
 
-@pytest.mark.parametrize("variant", list(isl.VARIANTS))
+@pytest.mark.parametrize("variant", list(isl.PREREGISTERED))      # the P1' wk sensitivity has no pub runs
 @pytest.mark.parametrize("model", list(isl.MODELS))
 def test_reports_pub_equals_nofil_without_filing_rows(model, variant):
     """Evidence set "pub" differs from "nofil" only where a filing row was public at the vintage."""
