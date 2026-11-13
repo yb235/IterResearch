@@ -107,6 +107,7 @@ class Obs:
     date_sd: float
     tier: str
     constraint: bool = False
+    y_hi: float | None = None      # kind "lower" with an upper edge: y <= value <= y_hi (config.LOWER_UPPER_RATIO)
 
 
 @dataclass
@@ -220,6 +221,35 @@ def lognormal_summary(mu, sd) -> dict:
     return {"median": math.exp(mu), "mean": math.exp(mu + sd * sd / 2),
             "q10": math.exp(mu - Z80 * sd), "q90": math.exp(mu + Z80 * sd),
             "log_mu": mu, "log_sd": sd}
+
+
+def log_ndtr_diff(b: float, a: float) -> float:
+    """log(Phi(b) - Phi(a)) for b > a, accurate when both lie in the same tail."""
+    if a > 0:                       # Phi(b) - Phi(a) = Phi(-a) - Phi(-b)
+        la, lb = float(log_ndtr(-a)), float(log_ndtr(-b))
+        return la + math.log1p(-math.exp(lb - la))
+    if b < 0:
+        la, lb = float(log_ndtr(a)), float(log_ndtr(b))
+        return lb + math.log1p(-math.exp(la - lb))
+    return math.log(max(1.0 - math.exp(float(log_ndtr(a))) - math.exp(float(log_ndtr(-b))), 1e-300))
+
+
+def lower_claim_rule(row, y: float) -> tuple[str, float | None]:
+    """(kind, y_hi) of a claim under config.LOWER_UPPER_RATIO (see config.py and lower_rule.py).
+
+    Only kind "lower" claims of run-rate or revenue that are not forecasts change. y is the claim
+    as obs_vector returns it: log value for run-rate, $B for revenue.
+    """
+    rule = config.LOWER_UPPER_RATIO
+    if rule is None or row.kind != "lower" or row.metric not in ("run_rate", "revenue") \
+            or int(_col(row, "is_forecast", 0)) == 1:
+        return row.kind, None
+    if rule == "point":
+        return "point", None
+    r = float(rule)
+    if not r > 1.0:
+        raise ValueError(f"config.LOWER_UPPER_RATIO must be None, 'point' or a ratio > 1, not {rule!r}")
+    return "lower", (y + math.log(r) if row.metric == "run_rate" else y * r)
 
 
 def _col(row, name, default):
@@ -346,7 +376,8 @@ class Model:
             if t < 0:
                 continue
             H, y, offset, base_var, date_sd = self.obs_vector(r, lay)
-            out.append(Obs(r.obs_id, t, r.metric, r.kind, y, H, offset, base_var, date_sd, r.tier))
+            kind, y_hi = lower_claim_rule(r, y)
+            out.append(Obs(r.obs_id, t, r.metric, kind, y, H, offset, base_var, date_sd, r.tier, y_hi=y_hi))
         return out
 
     # ------------------------------------------------------------------- run
@@ -539,7 +570,14 @@ class Model:
             p_tail = float(2 * norm.sf(abs(z)))
         else:
             a = (o.y - mu) / s
-            if o.kind == "lower":           # true value > y
+            if o.kind == "lower" and o.y_hi is not None:     # y <= true value <= y_hi
+                b = (o.y_hi - mu) / s
+                logZ = log_ndtr_diff(b, a)
+                pa = math.exp(norm.logpdf(a) - logZ)
+                pb = math.exp(norm.logpdf(b) - logZ)
+                Ez = mu + s * (pa - pb)
+                Vz = S * min(max(1.0 + a * pa - b * pb - (pa - pb) ** 2, 1e-9), 1.0)
+            elif o.kind == "lower":         # true value > y
                 logZ = float(log_ndtr(-a))
                 lam = math.exp(norm.logpdf(a) - logZ)
                 Ez = mu + s * lam

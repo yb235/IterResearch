@@ -71,6 +71,13 @@ USE_FILINGS = False
 # 1 = announcement). 0.5 is the neutral uniform rule; the fitted value is written to
 # params.json (crossing_position) by `python -m runrate_nowcast fit-crossing --write`.
 CROSSING_POSITION = 0.5
+# How a "surpassed / topped / over $X" claim (kind = lower, metric run_rate or revenue, not a
+# forecast) enters the filter (sub-task N; variants in lower_rule.py):
+#   None     one-sided, true value > X (default; the original rule)
+#   r > 1    two-sided, X <= true value <= r X (truncated normal on [X, r X])
+#   "point"  a point claim at X
+# Evidence rows and target selection do not change: the rule acts where model.Model compiles claims.
+LOWER_UPPER_RATIO = None
 
 # How far back each run-rate definition looks. A run-rate quoted on date d is mapped
 # to the instantaneous annualized revenue rate at d - lag.
