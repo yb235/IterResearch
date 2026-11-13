@@ -17,7 +17,7 @@ python -m runrate_nowcast nowcast --asof 2026-11-10 --plot   # 报告和两张�
 python -m runrate_nowcast layers                             # 逐层回测（约 25 秒）
 python -m runrate_nowcast audit                              # 手定选项的敏感性审计（约 8 分钟）
 python -m runrate_nowcast layers --refit                     # 严格样本外逐层回测（约 20 分钟）
-python -m pytest runrate_nowcast/tests -q                    # 16 个测试，约 10 秒
+python -m pytest runrate_nowcast/tests -q                    # 约 260 个测试，约 4 分钟
 ```
 
 ---
@@ -144,6 +144,7 @@ python -m runrate_nowcast plot-errors --asof 2026-11-10         # 另生成 pric
 ```
 
 图：[`reports/price_study_errors_2026-11-10.png`](reports/price_study_errors_2026-11-10.png)（A–D 逐目标误差）、[`reports/price_index_2026-11-10.png`](reports/price_index_2026-11-10.png)（单价指数和组合）。
+
 ## 最新（2026-11-13）：回测时用上预测日之前已公开的 S-1 数字（子任务 O）
 
 **做法**：规则事先登记（`DATA_PLAN.md`，提交 905d9e8）。
