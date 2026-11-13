@@ -243,24 +243,27 @@ def plot_price_index(path, asof="2026-11-10"):
     fig, axes = plt.subplots(2, 1, figsize=(12, 9), dpi=150, gridspec_kw={"height_ratios": [1.2, 1]}, sharex=True)
     fig.patch.set_facecolor(SURFACE)
     ax = axes[0]
-    for col, label, color, ls in (("model_list", "Per-model mix x list price (main)", ORANGE, "-"),
-                                  ("model_cache", "Per-model mix x cache-heavy basket (sensitivity)", BLUE, "-"),
-                                  ("family_opus_sonnet", "Opus/Sonnet family mix only (previous)", INK2, ":")):
-        ax.plot(tab.index, tab[col], color=color, lw=2 if ls == "-" else 1.4, ls=ls, label=label, drawstyle="steps-post")
+    for col, label, color, ls, lw in (("family_opus_sonnet", "Opus/Sonnet family mix only (previous)", INK2, ":", 1.4),
+                                      ("model_cache", "Per-model mix x cache-heavy basket (sensitivity)", BLUE, "--", 1.8),
+                                      ("model_list", "Per-model mix x list price (main)", ORANGE, "-", 2.2)):
+        ax.plot(tab.index, tab[col], color=color, lw=lw, ls=ls, label=label, drawstyle="steps-post",
+                zorder=3 if col == "model_list" else 2)
     cuts = prices[(prices.release_date >= "2025-11-01")]
     for r in cuts.itertuples():
         ax.axvline(r.release_date, color=GRID, lw=0.9, zorder=0)
-        ax.text(r.release_date, 1.13, r.model.replace("claude-", ""), rotation=90, fontsize=6.5, color=INK2,
+        ax.text(r.release_date, 1.58, r.model.replace("claude-", ""), rotation=90, fontsize=6.5, color=INK2,
                 va="top", ha="right")
     t0 = sh.index[0] + pd.Timedelta(days=7) if len(sh) else None
     if t0 is not None:
         ax.axvspan(tab.index[0], t0, color=GRID, alpha=0.5, lw=0, zorder=0)
-        ax.text(tab.index[0], 0.62, " flat fallback:\n model names not yet\n in the trailer", fontsize=7.5, color=INK2)
-    ax.set_ylim(0.6, 1.15)
+        ax.text(tab.index[0], 1.30, " flat fallback:\n model names not\n yet in the trailer", fontsize=7.5, color=INK2,
+                va="top")
+    ax.set_ylim(0.6, 1.6)
     ax.set_ylabel("price per token, first measured week = 1", color=INK2, fontsize=9)
     ax.set_title("Price per token of the models used in public Claude Code commits (real time: as known on each date)",
                  loc="left", fontsize=11, color=INK)
-    ax.legend(loc="lower left", frameon=False, fontsize=8.5, labelcolor=INK)
+    h, lab = ax.get_legend_handles_labels()
+    ax.legend(h[::-1], lab[::-1], loc="lower left", frameon=False, fontsize=8.5, labelcolor=INK)
     _style(ax)
     ax = axes[1]
     if len(sh):
@@ -280,8 +283,9 @@ def plot_price_index(path, asof="2026-11-10"):
     ax.set_ylabel("share of commits naming a model", color=INK2, fontsize=9)
     ax.set_title("Model mix by price tier, sample weeks (bars = one 7-day sample)", loc="left", fontsize=11, color=INK)
     _style(ax)
-    fig.text(0.01, 0.005, "Source: GitHub commit search for 'Co-Authored-By: Claude <model>' (approximate counts; "
-             "prefix matches subtracted); list prices from data/model_prices.csv.", fontsize=7.5, color=INK2)
+    fig.text(0.01, 0.005, "Source: GitHub commit search for 'Co-Authored-By: Claude <model>' (approximate counts): "
+             "family count x within-family split from exact-phrase counts; list prices from data/model_prices.csv.",
+             fontsize=7.5, color=INK2)
     fig.tight_layout(rect=(0, 0.02, 1, 1))
     fig.savefig(path, facecolor=SURFACE)
     plt.close(fig)
@@ -315,12 +319,12 @@ def plot_price_study(path, asof="2026-11-10"):
             parts.append(f"{key} {100 * m.log_err_model.abs().mean():.0f}% (n={len(m)})")
         ax.axhline(0, color=INK, lw=1)
         ax.axhspan(-10, 10, color=GRID, alpha=0.45, lw=0, zorder=0)
-        for t in ("rev_2026q3", "rr_2026_09_s1a", "rr_2026_10_s1a"):
+        for t, off in (("rev_2026q3", (-40, -4)), ("rr_2026_09_s1a", (-70, 6)), ("rr_2026_10_s1a", (-40, 18))):
             r = sub[(sub.model == "C") & (sub.target == t)]
             if len(r):
                 r = r.iloc[0]
                 ax.annotate(f"{t}: C {r.forecast:.1f} vs {r.actual:g}", (pd.Timestamp(r.date), r.pct),
-                            textcoords="offset points", xytext=(-10, 10), ha="right", fontsize=7.5, color=INK2,
+                            textcoords="offset points", xytext=off, ha="right", va="center", fontsize=7.5, color=INK2,
                             arrowprops={"arrowstyle": "-", "color": INK2, "lw": 0.7})
         ax.set_title(f"{title}. Mean |log error|: " + ", ".join(parts), loc="left", fontsize=10, color=INK)
         ax.set_ylabel("forecast / actual - 1 (%)", color=INK2, fontsize=9)
@@ -329,7 +333,7 @@ def plot_price_study(path, asof="2026-11-10"):
     fig.legend(handles=handles, loc="upper center", ncol=4, frameon=False, fontsize=9, labelcolor=INK,
                bbox_to_anchor=(0.5, 1.0))
     fig.text(0.01, 0.005, "No filing number is ever an input; parameters refit at each vintage. Targets: GAAP quarters "
-             "and FY2025 (S-1), $71B / $81B (S-1/A), official run-rate statements. Shaded: within +/-10%.",
+             "and FY2025 (S-1), \\$71B / \\$81B (S-1/A), official run-rate statements. Shaded: within +/-10%.",
              fontsize=7.5, color=INK2)
     fig.tight_layout(rect=(0, 0.02, 1, 0.96))
     fig.savefig(path, facecolor=SURFACE)

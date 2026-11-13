@@ -46,7 +46,7 @@ from . import altdata, backtest, calibrate, config, data, pricing
 ASOF = "2026-11-10"              # label of the evaluation set (targets published by 2026-11-10)
 # The GitHub backfill keeps running after the study; the study uses the per-model rows collected
 # before this time (pricing.COLLECTED_BEFORE), so it can be rerun on exactly the same data.
-DATA_CUTOFF = None
+DATA_CUTOFF = "2026-11-13T11:40:30Z"     # price-tier queries finished at 11:40:18 UTC
 pricing.COLLECTED_BEFORE = DATA_CUTOFF
 RULES = ("publication", "period_end")
 COMPONENTS = [("A", 0.0), ("B", 0.0), ("C", 0.5), ("C", 1.0), ("Ccache", 0.5), ("Ccache", 1.0),
@@ -105,11 +105,20 @@ def frame(variant: str) -> pd.DataFrame:
     raise ValueError(variant)
 
 
-def component_path(variant, gamma, rule, asof=ASOF):
-    return os.path.join(config.OUTPUT_DIR, f"price_study_{variant}_g{gamma:g}_{rule}_{asof}.csv")
+def _tag(lower):
+    """File tag for a lower-claim rule of sub-task N (lower_rule.py); '' for the default rule."""
+    return "" if lower in (None, "baseline") else f"_{lower}"
 
 
-def run_component(variant: str, gamma: float, rule: str, asof: str = ASOF) -> str:
+def component_path(variant, gamma, rule, asof=ASOF, lower=None):
+    return os.path.join(config.OUTPUT_DIR, f"price_study_{variant}_g{gamma:g}_{rule}{_tag(lower)}_{asof}.csv")
+
+
+def run_component(variant: str, gamma: float, rule: str, asof: str = ASOF, lower: str | None = None) -> str:
+    """One component backtest. lower: a lower_rule variant (e.g. 'iv115'), applied for this process."""
+    if lower not in (None, "baseline"):
+        from . import lower_rule
+        lower_rule.apply(lower)
     df = pricing.adjust_usage_indicators(frame(variant), gamma, SCHEME[variant])
     p = calibrate.load_params()
     ctx = github_indicator() if variant == "D" else contextlib.nullcontext()
@@ -118,27 +127,27 @@ def run_component(variant: str, gamma: float, rule: str, asof: str = ASOF) -> st
             p["indicators"] = altdata.indicator_params()
         bt = backtest.run_backtest(df, p, refit=True, crossing="profile", vintage_rule=rule, loglik=True)
     bt["variant"], bt["gamma"], bt["rule"] = variant, gamma, rule
-    path = component_path(variant, gamma, rule, asof)
+    path = component_path(variant, gamma, rule, asof, lower)
     bt.to_csv(path, index=False)
     return path
 
 
-def load_component(variant, gamma, rule, asof=ASOF) -> pd.DataFrame | None:
-    path = component_path(variant, gamma, rule, asof)
+def load_component(variant, gamma, rule, asof=ASOF, lower=None) -> pd.DataFrame | None:
+    path = component_path(variant, gamma, rule, asof, lower)
     return pd.read_csv(path) if os.path.exists(path) else None
 
 
 # --------------------------------------------------------------------------- combine
-def combine(asof: str = ASOF):
+def combine(asof: str = ASOF, lower: str | None = None):
     """Mixtures, fixed-gamma rows, and paired bootstraps. Returns (rows, summary, pairs)."""
     rows = []
     for rule in RULES:
         for v in ("A", "B"):
-            c = load_component(v, 0.0, rule, asof)
+            c = load_component(v, 0.0, rule, asof, lower)
             if c is not None:
                 rows.append(c.assign(model=v, rule=rule))
         for v, spec in MIXTURES.items():
-            comps = {g: load_component(*key, rule, asof) for g, key in spec.items()}
+            comps = {g: load_component(*key, rule, asof, lower) for g, key in spec.items()}
             if any(c is None for c in comps.values()):
                 continue
             for lik in ("claims", "joint"):
@@ -178,8 +187,9 @@ def _fmt(x, nd=3):
     return "" if x is None or (isinstance(x, float) and not np.isfinite(x)) else f"{x:.{nd}f}"
 
 
-def markdown(d, summ, pairs, asof=ASOF) -> str:
-    L = [f"# Price per token in the indicator layer: strict backtest ({asof} targets)", "",
+def markdown(d, summ, pairs, asof=ASOF, lower=None) -> str:
+    rule_txt = "default lower-claim rule (one-sided)" if lower in (None, "baseline") else f"lower-claim rule {lower}"
+    L = [f"# Price per token in the indicator layer: strict backtest ({asof} targets, {rule_txt})", "",
          "Filings are never evidence; every parameter is refit at each vintage; crossing position profiled per vintage.",
          "Errors are log(actual / forecast): negative = forecast too high.", ""]
     order = ["A", "B", "C", "C_jointlik", "C_g0.5", "C_g1", "Ccache", "Ccache_g1", "D", "D_jointlik", "D_g1"]
@@ -264,7 +274,8 @@ def decomposition(basket: str = "list") -> pd.DataFrame:
 
 # --------------------------------------------------------------------------- nowcast
 def nowcast(asof: str, variant: str = "C", n_draws: int = 20000, seed: int = 0,
-            dates=("2026-10-31", "2026-11-30", "2026-12-31"), period=("2026-10-01", "2026-12-31")):
+            dates=("2026-10-31", "2026-11-30", "2026-12-31"), period=("2026-10-01", "2026-12-31"),
+            lower: str | None = None):
     """Forecast with data public by `asof` (no filings), gamma averaged by evidence.
 
     For each gamma: crossing position profiled on data public by asof, every parameter refit
@@ -273,7 +284,12 @@ def nowcast(asof: str, variant: str = "C", n_draws: int = 20000, seed: int = 0,
     """
     from .model import Model, period_key
     from . import robust
-    asof = pd.Timestamp(asof)
+    from . import lower_rule
+    with lower_rule.lower_rule(lower or "baseline"):
+        return _nowcast(pd.Timestamp(asof), variant, n_draws, seed, dates, period, Model, period_key, robust)
+
+
+def _nowcast(asof, variant, n_draws, seed, dates, period, Model, period_key, robust):
     spec = MIXTURES.get(variant, {0.0: (variant, 0.0)})
     comps = []
     for g, (v, _) in spec.items():

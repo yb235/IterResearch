@@ -138,3 +138,15 @@ def test_loglik_columns_see_only_data_public_at_the_vintage():
     b = backtest.run_backtest(df2, p, target_ids=one, loglik=True).iloc[0]
     assert a.ll_claims == pytest.approx(b.ll_claims) and a.mu == pytest.approx(b.mu)
     assert not np.isclose(a.ll_claims, a.ll_joint)
+
+
+def test_collected_before_pins_the_per_model_rows(tmp_path):
+    m = tmp_path / "models.csv"
+    m.write_text("week_start,week_end,query,total_count,incomplete,collected_at\n"
+                 "2026-11-02,2026-11-08,Claude Opus 5.5,100,True,2026-11-13T11:00:00Z\n"
+                 "2026-11-02,2026-11-08,Claude Opus 5 noreply,7,True,2026-11-13T12:00:00Z\n")
+    empty = tmp_path / "none.csv"
+    q_all = pricing.load_commit_queries(str(m), str(empty), str(empty), collected_before="2026-11-14")
+    q_cut = pricing.load_commit_queries(str(m), str(empty), str(empty), collected_before="2026-11-13T11:30:00Z")
+    assert len(q_all) == 2 and list(q_cut["query"]) == ["Claude Opus 5.5"]
+    assert price_study.DATA_CUTOFF is not None and pricing.COLLECTED_BEFORE == price_study.DATA_CUTOFF

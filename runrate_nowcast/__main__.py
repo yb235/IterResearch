@@ -67,6 +67,7 @@ def main(argv=None):
     p.add_argument("--variant", default="C"); p.add_argument("--gamma", type=float, default=1.0)
     p.add_argument("--rule", default="publication"); p.add_argument("--asof", default=None)
     p.add_argument("--register", action="store_true")
+    p.add_argument("--lower", default=None, help="lower-claim rule of sub-task N (lower_rule.VARIANTS), e.g. iv115")
     a = ap.parse_args(argv)
 
     warnings.simplefilter("ignore")
@@ -250,33 +251,38 @@ def main(argv=None):
 def _price_study(a, ps):
     import json
     if a.action == "run":
-        print("->", ps.run_component(a.variant, a.gamma, a.rule))
+        print("->", ps.run_component(a.variant, a.gamma, a.rule, lower=a.lower))
     elif a.action == "combine":
-        d, summ, pairs = ps.combine()
-        d.to_csv(os.path.join(config.OUTPUT_DIR, f"price_study_{ps.ASOF}.csv"), index=False)
-        summ.to_csv(os.path.join(config.OUTPUT_DIR, f"price_study_summary_{ps.ASOF}.csv"), index=False)
-        pairs.to_csv(os.path.join(config.OUTPUT_DIR, f"price_study_pairs_{ps.ASOF}.csv"), index=False)
-        ps.price_table().to_csv(os.path.join(config.OUTPUT_DIR, f"price_index_{ps.ASOF}.csv"), date_format="%Y-%m-%d")
-        md = ps.markdown(d, summ, pairs)
-        out = os.path.join(config.OUTPUT_DIR, f"price_study_{ps.ASOF}.md")
+        t = ps._tag(a.lower)
+        d, summ, pairs = ps.combine(lower=a.lower)
+        d.to_csv(os.path.join(config.OUTPUT_DIR, f"price_study{t}_{ps.ASOF}.csv"), index=False)
+        summ.to_csv(os.path.join(config.OUTPUT_DIR, f"price_study_summary{t}_{ps.ASOF}.csv"), index=False)
+        pairs.to_csv(os.path.join(config.OUTPUT_DIR, f"price_study_pairs{t}_{ps.ASOF}.csv"), index=False)
+        if not t:
+            ps.price_table().to_csv(os.path.join(config.OUTPUT_DIR, f"price_index_{ps.ASOF}.csv"), date_format="%Y-%m-%d")
+            ps.decomposition().to_csv(os.path.join(config.OUTPUT_DIR, f"price_decomposition_{ps.ASOF}.csv"), index=False)
+            ps.pricing.model_counts().to_csv(os.path.join(config.OUTPUT_DIR, f"github_model_counts_{ps.ASOF}.csv"))
+        md = ps.markdown(d, summ, pairs, lower=a.lower)
+        out = os.path.join(config.OUTPUT_DIR, f"price_study{t}_{ps.ASOF}.md")
         with open(out, "w") as f:
             f.write(md)
         print(md); print(f"-> {out}")
     elif a.action == "nowcast":
         asof = a.asof or f"{pd.Timestamp.today():%Y-%m-%d}"
-        s = ps.nowcast(asof, a.variant)
+        s = ps.nowcast(asof, a.variant, lower=a.lower)
         print(json.dumps({k: v for k, v in s.items() if k != "components"}, indent=1))
         for c in s["components"]:
             print({k: (round(v, 4) if isinstance(v, float) else v) for k, v in c.items()})
-        out = os.path.join(config.OUTPUT_DIR, f"price_study_nowcast_{a.variant}_{asof}.json")
+        out = os.path.join(config.OUTPUT_DIR, f"price_study_nowcast_{a.variant}{ps._tag(a.lower)}_{asof}.json")
         with open(out, "w") as f:
             json.dump(s, f, indent=1, default=str)
         print(f"-> {out}")
         if a.register:
             summ = {k: v for k, v in s.items() if k.startswith("runrate_") or k in ("revenue_quarter", "period")}
             w = ", ".join(f"{g:g}: {x:.2f}" for g, x in s["weights"].items())
-            e = registry.register_summary(f"price_{a.variant}", asof, summ,
+            e = registry.register_summary(f"price_{a.variant}{ps._tag(a.lower)}", asof, summ,
                                           note=f"price study ({ps.LABELS.get(a.variant, a.variant)}); no filings as inputs; "
+                                               f"lower claims: {a.lower or 'baseline (one-sided)'}; "
                                                f"gamma weights by claim likelihood {{{w}}}")
             print("registered", e["registered_at_utc"])
 
