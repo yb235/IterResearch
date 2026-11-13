@@ -78,6 +78,20 @@ CROSSING_POSITION = 0.5
 #   "point"  a point claim at X
 # Evidence rows and target selection do not change: the rule acts where model.Model compiles claims.
 LOWER_UPPER_RATIO = None
+# Sub-task P (indicator_slope.py): how a usage indicator's intercept a_i may move relative to revenue.
+# All three default to None, and then the filter and the indicator refit are exactly the previous code.
+#   INDICATOR_SLOPE      P1: dict(b0_sd=0.01, slope_sd=0.001). The intercept becomes a local linear
+#                        trend, a_t = a_{t-1} + b_{t-1}/7 + eta_t (eta daily sd = the indicator's drift,
+#                        as before), b_t = b_{t-1} + zeta_t. b is in log per week: b_0 ~ N(0, b0_sd^2),
+#                        and zeta's variance per day is slope_sd^2 / 7 (slope_sd per week).
+#   INDICATOR_DRIFT      P1': every indicator's intercept drift fixed at this value (the units of the
+#                        catalog's `drift` column: log sd per sqrt(day)); the per-vintage refit
+#                        (calibrate.fit_indicators) then estimates only beta and obs_sd.
+#   INDICATOR_BETA_SD    P1'': prior sd of every indicator's beta in calibrate.fit_indicators
+#                        (replaces the catalog's beta_sd; the prior mean stays the catalog beta).
+INDICATOR_SLOPE = None
+INDICATOR_DRIFT = None
+INDICATOR_BETA_SD = None
 
 # How far back each run-rate definition looks. A run-rate quoted on date d is mapped
 # to the instantaneous annualized revenue rate at d - lag.

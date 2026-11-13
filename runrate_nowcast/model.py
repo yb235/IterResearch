@@ -17,6 +17,9 @@ State (one step per calendar day):
            taken as fixed: levels come from audited and official figures, and the
            indicators mostly carry information about changes. A known break in how a
            source counts (catalog `breaks`) adds a one-off variance bump to a_i.
+    Optionally (config.INDICATOR_SLOPE, sub-task P) the intercept is a local linear trend
+           a_i' = a_i + d_i/7 + noise, d_i' = d_i + noise: d_i (log per week) is the indicator's
+           excess growth over revenue, learned online. Off by default.
   Indicator families (optional)
     c_f    shared drift of an indicator family (e.g. npm and PyPI SDK downloads) relative
            to revenue. Without it, two indicators drifting together are counted as two
@@ -71,10 +74,12 @@ class Layout:
     indicators: list
     periods: list
     factors: list = field(default_factory=list)
+    slopes: list = field(default_factory=list)      # indicators whose intercept has a slope state (P1)
 
     @property
     def n(self):
-        return N_BASE + len(self.segments) + len(self.indicators) + len(self.factors) + len(self.periods)
+        return N_BASE + len(self.segments) + len(self.indicators) + len(self.factors) + len(self.slopes) \
+            + len(self.periods)
 
     def seg(self, name):
         return N_BASE + self.segments.index(name)
@@ -85,9 +90,12 @@ class Layout:
     def fac(self, name):
         return N_BASE + len(self.segments) + len(self.indicators) + self.factors.index(name)
 
+    def slp(self, name):
+        return N_BASE + len(self.segments) + len(self.indicators) + len(self.factors) + self.slopes.index(name)
+
     @property
     def acc0(self):
-        return N_BASE + len(self.segments) + len(self.indicators) + len(self.factors)
+        return N_BASE + len(self.segments) + len(self.indicators) + len(self.factors) + len(self.slopes)
 
     @property
     def n_core(self):
@@ -190,6 +198,12 @@ class Result:
     def indicator_intercept(self, date, name, smoothed=True):
         m, P = self.state(date, smoothed)
         j = self.layout.ind(name)
+        return float(m[j]), float(math.sqrt(max(P[j, j], 0.0)))
+
+    def indicator_slope(self, date, name, smoothed=True):
+        """Excess growth of an indicator over revenue (log per week; config.INDICATOR_SLOPE only)."""
+        m, P = self.state(date, smoothed)
+        j = self.layout.slp(name)
         return float(m[j]), float(math.sqrt(max(P[j, j], 0.0)))
 
     def growth(self, date, smoothed=True):
@@ -305,7 +319,8 @@ class Model:
             f = self.p["indicators"][name].get("factor") or ""
             if f and f not in facs:
                 facs.append(f)
-        return Layout(order, inds, self._periods(obs_df, queries), facs)
+        slopes = list(inds) if config.INDICATOR_SLOPE else []
+        return Layout(order, inds, self._periods(obs_df, queries), facs, slopes)
 
     def _periods(self, obs_df, queries):
         seen, out = set(), []
@@ -440,7 +455,8 @@ class Model:
             first = math.log(float(rows.sort_values("t_eff").value.iloc[0])) if len(rows) else 0.0
             m0[j] = first - float(spec.get("beta", 1.0)) * 3.0
             P0[j, j] = float(spec.get("prior_sd", 5.0)) ** 2
-            Q[j, j] = float(spec.get("drift", 0.003)) ** 2
+            drift = spec.get("drift", 0.003) if config.INDICATOR_DRIFT is None else config.INDICATOR_DRIFT
+            Q[j, j] = float(drift) ** 2
             for d in spec.get("breaks", []) or []:
                 breaks.setdefault((pd.Timestamp(d) - self.start).days, []).append(j)
         for f in lay.factors:
@@ -449,6 +465,14 @@ class Model:
             # and carries only the common drift.
             P0[j, j] = float(spec.get("prior_sd", 0.01)) ** 2
             Q[j, j] = float(spec.get("drift", 0.01)) ** 2
+        slopes = []
+        for name in lay.slopes:
+            # Excess growth of the indicator over revenue, log per week: starts at 0 with sd b0_sd and
+            # moves by slope_sd per week (variance slope_sd^2 / 7 per daily step).
+            j = lay.slp(name)
+            P0[j, j] = float(config.INDICATOR_SLOPE["b0_sd"]) ** 2
+            Q[j, j] = float(config.INDICATOR_SLOPE["slope_sd"]) ** 2 / 7.0
+            slopes.append((lay.ind(name), j))
         starts = np.array([(pp.start - self.start).days for pp in lay.periods], dtype=int)
         ends = np.array([(pp.end - self.start).days for pp in lay.periods], dtype=int)
         c = np.zeros(n)
@@ -459,6 +483,7 @@ class Model:
         part = [lay.seg(s) for s in lay.segments if p["segments"][s]["partition"]]
         return {"Q": Q, "m0": m0, "P0": P0, "starts": starts, "ends": ends, "c": c, "n": n,
                 "kappa": kappa, "a_g": a_g, "acc0": lay.acc0, "partition": part, "breaks": breaks,
+                "slopes": slopes,
                 "vol": {k: math.exp(float(v)) for k, v in (p.get("vol_scales") or {}).items()}}
 
     def _transition(self, ctx, t):
@@ -467,6 +492,8 @@ class Model:
         M = np.eye(n)
         M[L, G] = 1.0 / config.DAYS_PER_MONTH
         M[G, G] = 1.0 - ctx["kappa"] / config.DAYS_PER_MONTH   # damped trend (kappa=0: none)
+        for i, j in ctx.get("slopes", ()):
+            M[i, j] = 1.0 / 7.0                                 # intercept moves by its weekly slope / 7 a day
         d = np.zeros(n)
         k = len(ctx["starts"])
         if k:

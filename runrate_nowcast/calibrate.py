@@ -88,7 +88,9 @@ def fit_indicators(df: pd.DataFrame, params: dict, names=None, verbose=True) -> 
     The objective is the same online-filter likelihood over all observations (claims and
     indicators), with priors from the catalog: beta ~ N(beta_prior, beta_sd) and
     log(drift) ~ N(log(drift_prior), 1). Indicators are fit one at a time, the others
-    held at their current values.
+    held at their current values. Every indicator with role "model" that has rows in df is fit.
+    Sub-task P options (default None: unchanged): config.INDICATOR_BETA_SD replaces every
+    beta_sd; config.INDICATOR_DRIFT fixes the drift, so only beta and obs_sd are fit.
     """
     sel = data.select(df)
     params = json.loads(json.dumps(params))
@@ -98,19 +100,34 @@ def fit_indicators(df: pd.DataFrame, params: dict, names=None, verbose=True) -> 
     out = {}
     for name in names:
         prior = dict(specs[name])
+        if config.INDICATOR_BETA_SD is not None:          # sub-task P1'': one beta prior sd for every indicator
+            prior["beta_sd"] = float(config.INDICATOR_BETA_SD)
+        if config.INDICATOR_DRIFT is not None:            # sub-task P1': drift fixed, beta and obs_sd fitted
+            fixed = float(config.INDICATOR_DRIFT)
 
-        def negpost(theta, name=name, prior=prior):
-            beta, logd, logs = theta
-            specs[name] = dict(prior, beta=float(beta), drift=float(math.exp(logd)), obs_sd=float(math.exp(logs)))
-            ll = Model(params).run(sel, smooth=False).loglik
-            lp = norm.logpdf(beta, prior["beta"], prior["beta_sd"]) + \
-                norm.logpdf(logd, math.log(prior["drift"]), 1.0) + \
-                norm.logpdf(logs, math.log(prior["obs_sd"]), 0.7)
-            return -(ll + lp)
+            def negpost2(theta, name=name, prior=prior):
+                beta, logs = theta
+                specs[name] = dict(prior, beta=float(beta), drift=fixed, obs_sd=float(math.exp(logs)))
+                ll = Model(params).run(sel, smooth=False).loglik
+                lp = norm.logpdf(beta, prior["beta"], prior["beta_sd"]) + norm.logpdf(logs, math.log(prior["obs_sd"]), 0.7)
+                return -(ll + lp)
 
-        x0 = [prior["beta"], math.log(prior["drift"]), math.log(prior["obs_sd"])]
-        opt = minimize(negpost, x0, method="Nelder-Mead", options={"xatol": 1e-3, "fatol": 1e-2, "maxiter": 200})
-        beta, drift, sd = float(opt.x[0]), float(math.exp(opt.x[1])), float(math.exp(opt.x[2]))
+            opt = minimize(negpost2, [prior["beta"], math.log(prior["obs_sd"])], method="Nelder-Mead",
+                           options={"xatol": 1e-3, "fatol": 1e-2, "maxiter": 200})
+            beta, drift, sd = float(opt.x[0]), fixed, float(math.exp(opt.x[1]))
+        else:
+            def negpost(theta, name=name, prior=prior):
+                beta, logd, logs = theta
+                specs[name] = dict(prior, beta=float(beta), drift=float(math.exp(logd)), obs_sd=float(math.exp(logs)))
+                ll = Model(params).run(sel, smooth=False).loglik
+                lp = norm.logpdf(beta, prior["beta"], prior["beta_sd"]) + \
+                    norm.logpdf(logd, math.log(prior["drift"]), 1.0) + \
+                    norm.logpdf(logs, math.log(prior["obs_sd"]), 0.7)
+                return -(ll + lp)
+
+            x0 = [prior["beta"], math.log(prior["drift"]), math.log(prior["obs_sd"])]
+            opt = minimize(negpost, x0, method="Nelder-Mead", options={"xatol": 1e-3, "fatol": 1e-2, "maxiter": 200})
+            beta, drift, sd = float(opt.x[0]), float(math.exp(opt.x[1])), float(math.exp(opt.x[2]))
         specs[name] = dict(prior, beta=beta, drift=drift, obs_sd=sd, fitted=True)
         out[name] = {"beta": beta, "drift": drift, "obs_sd": sd, "prior_beta": prior["beta"],
                      "prior_drift": prior["drift"], "prior_obs_sd": prior["obs_sd"], "neg_log_post": float(opt.fun)}
